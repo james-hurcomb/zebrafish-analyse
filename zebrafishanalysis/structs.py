@@ -63,7 +63,7 @@ class TrajectoryObject:
             fish_range = slice(0, self.num_fish)
 
         return np.array(self.positions[:, fish_range, 0]).reshape(self.num_fish*self.num_frames), \
-            np.array(self.positions[:, fish_range, 1]).reshape(self.num_fish*self.num_frames),
+            np.array(self.positions[:, fish_range, 1]).reshape(self.num_fish*self.num_frames)
 
 
 class NovelObjectRecognitionTest(TrajectoryObject):
@@ -77,20 +77,20 @@ class NovelObjectRecognitionTest(TrajectoryObject):
         self.object_b = object_locations[1]
 
     def determine_object_preference_by_frame(self,
-                                             acuity: float,
+                                             exploration_area_radius: float,
                                              fish_range: tuple = None) -> tuple:
         """Returns number of frames fish had preference for a particular object
 
         Args:
-            acuity (float): Frame to inspect
+            exploration_area_radius (float): Frame to inspect
             fish_range (tuple): Range of fish to run on. Defaults to all fish
 
         Returns:
             tuple: num frames closer to object a, num frames closer to object b
         """
 
-        if self.distance_between_points(self.object_a, self.object_b) <= acuity:
-            raise AcuityError(f"Acuity supplied ({acuity}) is greater than distance between novel objects "
+        if self.distance_between_points(self.object_a, self.object_b) <= exploration_area_radius:
+            raise AcuityError(f"Exploration area supplied ({exploration_area_radius}) is greater than distance between novel objects "
                               f"(({self.distance_between_points(self.object_a, self.object_b)}).")
 
         if fish_range is None:
@@ -101,13 +101,12 @@ class NovelObjectRecognitionTest(TrajectoryObject):
             for fish in frame[fish_range[0]:fish_range[1] + 1]:
                 dist_to_a, dist_to_b = self.distance_between_points(fish, self.object_a), \
                                        self.distance_between_points(fish, self.object_b)
-                if dist_to_a < acuity:
+                if dist_to_a < exploration_area_radius:
                     pref_a += 1
-                elif dist_to_b < acuity:
+                elif dist_to_b < exploration_area_radius:
                     pref_b += 1
                 else:
                     no_pref += 1
 
         return pref_a, pref_b, no_pref
-
 
