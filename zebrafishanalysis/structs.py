@@ -1,5 +1,6 @@
 import numpy as np
 import trajectorytools as tt
+import matplotlib.path as pltpath
 
 
 class AcuityError(Exception):
@@ -20,6 +21,7 @@ class TrajectoryObject:
 
         # Organise trajectories data
         self.positions: np.ndarray = raw_loaded_trajectories.s
+        self.modified_positions: np.ndarray = raw_loaded_trajectories.s
 
         # Social data
 
@@ -52,7 +54,7 @@ class TrajectoryObject:
         return np.sqrt((point_a[0] - point_b[0])**2 + (point_a[1] - point_b[1])**2)
 
     def flatten_fish_positions(self,
-                               fish_range: slice = None) -> tuple:
+                               fish_range: slice = None) -> np.ndarray:
         """Returns a flattened tuple containing all X and Y coordinates visited by fish in the range
         Args:
             fish_range (tuple): Range of fish to run on
@@ -62,8 +64,24 @@ class TrajectoryObject:
         if fish_range is None:
             fish_range = slice(0, self.num_fish)
 
-        return np.array(self.positions[:, fish_range, 0]).reshape(self.num_fish*self.num_frames), \
-            np.array(self.positions[:, fish_range, 1]).reshape(self.num_fish*self.num_frames)
+        return np.array(self.positions[:, fish_range, :]).reshape(self.positions.shape[1]*self.positions.shape[0], 2)
+
+    def remove_frames_from_polygon(self,
+                                   vertices: list,
+                                   output: bool = None):
+
+        path = pltpath.Path(vertices)
+        points_to_check = self.flatten_fish_positions()
+        point_bools = ~path.contains_points(points_to_check)
+
+        self.modified_positions = self.modified_positions[point_bools]
+        if output is True:
+            self.positions = self.positions[point_bools]
+
+        return self.modified_positions
+
+    def apply_modifications(self) -> None:
+        self.positions = self.modified_positions
 
 
 class NovelObjectRecognitionTest(TrajectoryObject):

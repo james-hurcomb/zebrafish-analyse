@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from typing import Callable
-from zebrafishanalysis.structs import TrajectoryObject
+from zebrafishanalysis.structs import TrajectoryObject, NovelObjectRecognitionTest
 
 
 def draw_figure(func: Callable) -> Callable:
@@ -12,13 +12,18 @@ def draw_figure(func: Callable) -> Callable:
     """
     def inner(*args, **kwargs):
         plt.clf()
-        func(*args, **kwargs)
+        print(isinstance(args[0], TrajectoryObject))
+        if isinstance(args[0], TrajectoryObject) or isinstance(args[0], NovelObjectRecognitionTest):
+            trajectories = args[0].flatten_fish_positions()
+        else:
+            trajectories = args[0]
+        func(trajectories, *args[1:], **kwargs)
         plt.show()
     return inner
 
 
 @draw_figure
-def create_heatmap(trajectories: TrajectoryObject,
+def create_heatmap(trajectories: np.ndarray or TrajectoryObject,
                    bins: int,
                    fish_range: slice = None) -> np.ndarray:
     """Plots a heatmap of fish positions
@@ -33,21 +38,16 @@ def create_heatmap(trajectories: TrajectoryObject,
         TrajectoryObject: Processed trajectories
     """
 
-    x, y = trajectories.flatten_fish_positions(fish_range)
+    x, y = trajectories[:, 0], trajectories[:, 1]
 
     heatmap, x_edges, y_edges = np.histogram2d(x, y, bins=(bins, bins))
     extent = [x_edges[0], x_edges[-1], y_edges[0], y_edges[-1]]
     return plt.imshow(heatmap.T, extent=extent, origin='lower')
 
 
-@draw_figure
-def plt_heatmap(tr):
-    x = tr.flatten_fish_positions()
+def get_measures(same_pref: tuple,
+                 diff_pref: tuple) -> dict:
 
-    return plt.imshow(x, cmap='hot', interpolation="nearest")
-
-
-def get_measures(same_pref, diff_pref):
     e1 = same_pref[0] + same_pref[1]
     e2 = diff_pref[0] + diff_pref[1]
 

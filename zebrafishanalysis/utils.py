@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import *
 from PIL import ImageTk, Image
 import av
+import numpy as np
 # Import internal utils
 from zebrafishanalysis.structs import TrajectoryObject
 
@@ -16,15 +17,13 @@ class ObjectOfInterest:
         self.marker = marker
         self.label = label
 
-
-class GuiForObjectPos:
+class SelectObjectPositions:
 
     def __init__(self,
                  master: Tk,
                  path: str):
-
         # Initiate vars
-        self.master: Tk = master
+        master: Tk = master
 
         # Get frame of video. I **really** hate this, but cannot get it to work otherwise and cannot be bothered to \
         # improve it as it works. Urgh.
@@ -35,7 +34,7 @@ class GuiForObjectPos:
         img = ImageTk.PhotoImage(fr)
 
         # Generate canvas, pack canvas into window, fill canvas with image
-        self.canvas: tk.Canvas = tk.Canvas(self.master)
+        self.canvas: tk.Canvas = tk.Canvas(master)
         self.canvas.pack()
         self.canvas.configure(height=img.height(), width=img.width())
         self.canvas.create_image(0, 0, anchor=tk.NW, image=img)
@@ -54,6 +53,7 @@ class GuiForObjectPos:
                              lambda event, obj=self.object_b: self.update_marker_coords(event, obj))
 
         tk.mainloop()
+
 
     def update_marker_coords(self,
                              eventcoords: Event,
@@ -80,12 +80,65 @@ class GuiForObjectPos:
         self.canvas.itemconfigure(obj.label, text=f"{x}, {y}")
 
 
+class SelectRegionsToRemove:
+
+    def __init__(self,
+                 master: Tk,
+                 path: str):
+        # This is some nasty code duplication, but I can't figure out how to get tkinter to do class inheritance
+        master: Tk = master
+
+        # Get frame of video. I **really** hate this, but cannot get it to work otherwise and cannot be bothered to \
+        # improve it as it works. Urgh.
+        vid_container = av.open(path)
+        for f in vid_container.decode(video=0):
+            fr = f.to_image()
+            break
+        img = ImageTk.PhotoImage(fr)
+
+        # Generate canvas, pack canvas into window, fill canvas with image
+        self.canvas: tk.Canvas = tk.Canvas(master)
+        self.canvas.pack()
+        self.canvas.configure(height=img.height(), width=img.width())
+        self.canvas.create_image(0, 0, anchor=tk.NW, image=img)
+
+
+        self.vertices = []
+        self.canvas.bind_all("<Button 1>", self.place_marker)
+
+        self.final_connection = self.canvas.create_line(0, 0, 0, 0)
+
+        tk.mainloop()
+
+    def place_marker(self, eventcoords):
+        x, y = eventcoords.x, eventcoords.y
+        self.vertices.append((x, y))
+        x_max, x_min = x + 5, x - 5
+        y_max, y_min = y + 5, y - 5
+
+        self.canvas.create_oval(x_max, y_max, x_min, y_min, fill="red")
+
+        if len(self.vertices) > 1:
+            self.connect_to_previous(x, y)
+
+    def connect_to_previous(self, x, y):
+        self.canvas.create_line(self.vertices[-2][0], self.vertices[-2][1], x, y)
+        self.canvas.coords(self.final_connection, x, y, self.vertices[0][0], self.vertices[0][1])
+
+
+
 def select_pos_from_video(path: str):
     root = tk.Tk()
-    win = GuiForObjectPos(root, path)
+    win = SelectObjectPositions(root, path)
     root.mainloop()
     return (win.object_a.x_pos, win.object_a.y_pos), (win.object_b.x_pos, win.object_b.y_pos)
 
+
+def remove_regions(path):
+    root = tk.Tk()
+    win = SelectRegionsToRemove(root, path)
+    root.mainloop()
+    return win.vertices
 
 def load_gapless_trajectories(wo_gaps: str,
                               interpolate_nans: bool = True,
@@ -127,3 +180,10 @@ def load_gapless_trajectories(wo_gaps: str,
     sys.setrecursionlimit(trajectories_raw.number_of_frames + 30)
 
     return trajectories_raw
+
+
+def crush_multiple_objects(objects: list):
+    if len(objects) <= 1:
+        raise ValueError
+    positions = [obj.flatten_fish_positions() for obj in objects]
+    return np.vstack(positions)
