@@ -77,7 +77,7 @@ class SelectObjectPositions:
         y_max, y_min = y + radius, y - radius
         self.canvas.coords(obj.marker, x_max, y_max, x_min, y_min)
         self.canvas.coords(obj.label, x + (radius * 2), y + (radius * 2))
-        self.canvas.itemconfigure(obj.label, text=f"{x}, {y}")
+        self.canvas.itemconfigure(obj.label, text=f"{x}, {720 - y}")
 
 
 class SelectRegionsToRemove:
@@ -101,7 +101,6 @@ class SelectRegionsToRemove:
         self.canvas.pack()
         self.canvas.configure(height=img.height(), width=img.width())
         self.canvas.create_image(0, 0, anchor=tk.NW, image=img)
-
 
         self.vertices = []
         self.canvas.bind_all("<Button 1>", self.place_marker)

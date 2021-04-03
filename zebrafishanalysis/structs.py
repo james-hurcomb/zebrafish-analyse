@@ -12,7 +12,9 @@ class TrajectoryObject:
     A class to store and provide basic tools for analysis of trajectories.
     """
 
-    def __init__(self, raw_loaded_trajectories: tt.trajectories):
+    def __init__(self, raw_loaded_trajectories: tt.trajectories,
+                 invert_y: bool = True,
+                 video_dimensions: tuple = (1280, 720)):
 
         # # Set some generic params for easy inspection at a later date
         self.num_fish: int = len(raw_loaded_trajectories.identity_labels)
@@ -21,7 +23,10 @@ class TrajectoryObject:
 
         # Organise trajectories data
         self.positions: np.ndarray = raw_loaded_trajectories.s
-        self.modified_positions: np.ndarray = raw_loaded_trajectories.s
+        if invert_y is True:
+            self.positions[:, :, 1] = video_dimensions[1] - self.positions[:, :, 1]
+
+        self.modified_positions: np.ndarray = self.positions
 
         # Social data
 
@@ -66,9 +71,11 @@ class TrajectoryObject:
 
         return np.array(self.positions[:, fish_range, :]).reshape(self.positions.shape[1]*self.positions.shape[0], 2)
 
-    def remove_frames_from_polygon(self,
-                                   vertices: list,
+    def remove_polygon_from_frames(self,
+                                   raw_vertices: list,
                                    output: bool = None):
+        vertices: np.ndarray = np.array(raw_vertices)
+        vertices[:, 1] = 720 - vertices[:, 1]
 
         path = pltpath.Path(vertices)
         points_to_check = self.flatten_fish_positions()
@@ -88,8 +95,11 @@ class NovelObjectRecognitionTest(TrajectoryObject):
 
     def __init__(self,
                  raw_loaded_trajectories: tt.trajectories,
-                 object_locations: tuple):
-        TrajectoryObject.__init__(self, raw_loaded_trajectories)
+                 object_locations: tuple,
+                 invert_y: bool = False,
+                 video_dimensions: tuple = (1280, 720)
+                 ):
+        TrajectoryObject.__init__(self, raw_loaded_trajectories, invert_y, video_dimensions)
 
         self.object_a = object_locations[0]
         self.object_b = object_locations[1]
