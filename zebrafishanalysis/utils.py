@@ -125,6 +125,7 @@ class SelectRegionsToRemove:
         y_max, y_min = y + 5, y - 5
 
         self.canvas.create_oval(x_max, y_max, x_min, y_min, fill="red")
+        self.canvas.create_text(x + 10, y + 10, text=f"{x}, {self.dimensions[1] - y}")
 
         if len(self.vertices) > 1:
             self.connect_to_previous(x, y)
