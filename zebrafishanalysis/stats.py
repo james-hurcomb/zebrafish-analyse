@@ -12,7 +12,6 @@ def draw_figure(func: Callable) -> Callable:
     """
     def inner(*args, **kwargs):
         plt.clf()
-        print(isinstance(args[0], TrajectoryObject))
         if isinstance(args[0], TrajectoryObject) or isinstance(args[0], NovelObjectRecognitionTest):
             trajectories = args[0].flatten_fish_positions()
         else:

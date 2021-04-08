@@ -21,10 +21,13 @@ class SelectObjectPositions:
 
     def __init__(self,
                  master: Tk,
-                 path: str):
+                 tr: TrajectoryObject):
         # Initiate vars
         master: Tk = master
 
+        # Get path out of the TrajectoryObject
+        path = tr.video_path
+        self.dimensions = tr.video_dimensions
         # Get frame of video. I **really** hate this, but cannot get it to work otherwise and cannot be bothered to \
         # improve it as it works. Urgh.
         vid_container = av.open(path)
@@ -70,23 +73,29 @@ class SelectObjectPositions:
 
         # Grab coordinates from eventcoords and set the object positions
         x, y = eventcoords.x, eventcoords.y
-        obj.x_pos, obj.y_pos = x, y
+        # Note, we draw the circle using the var y, as this is the tkinter coordinate. However, we pass dim[1] - y to\
+        # the object, as this is the "real" coordinate. We also ensure when the label is updated, we update it with the\
+        # _text_ to match the "real" coordinate
+        obj.x_pos, obj.y_pos = x, self.dimensions[1] - y
 
         # Update locations of objects, redraw circles and edit text on label
         x_max, x_min = x + radius, x - radius
         y_max, y_min = y + radius, y - radius
         self.canvas.coords(obj.marker, x_max, y_max, x_min, y_min)
         self.canvas.coords(obj.label, x + (radius * 2), y + (radius * 2))
-        self.canvas.itemconfigure(obj.label, text=f"{x}, {720 - y}")
+        self.canvas.itemconfigure(obj.label, text=f"{x}, {self.dimensions[1] - y}")
 
 
 class SelectRegionsToRemove:
 
     def __init__(self,
                  master: Tk,
-                 path: str):
+                 tr: TrajectoryObject):
         # This is some nasty code duplication, but I can't figure out how to get tkinter to do class inheritance
         master: Tk = master
+
+        path = tr.video_path
+        self.dimensions = tr.video_dimensions
 
         # Get frame of video. I **really** hate this, but cannot get it to work otherwise and cannot be bothered to \
         # improve it as it works. Urgh.
@@ -126,18 +135,22 @@ class SelectRegionsToRemove:
 
 
 
-def select_pos_from_video(path: str):
+def select_pos_from_video(tr: TrajectoryObject):
     root = tk.Tk()
-    win = SelectObjectPositions(root, path)
+    win = SelectObjectPositions(root, tr)
     root.mainloop()
+    # We convert the coordinates to the flipped status while they're being created, so don't need to bother here
     return (win.object_a.x_pos, win.object_a.y_pos), (win.object_b.x_pos, win.object_b.y_pos)
 
 
-def remove_regions(path):
+def select_polygon(tr: TrajectoryObject):
     root = tk.Tk()
-    win = SelectRegionsToRemove(root, path)
+    win = SelectRegionsToRemove(root, tr)
     root.mainloop()
-    return win.vertices
+    # We need to flip the verticies
+    vertices: np.array = np.array(win.vertices)
+    vertices[:, 1] = tr.video_dimensions[1] - vertices[:, 1]
+    return vertices
 
 def load_gapless_trajectories(wo_gaps: str,
                               interpolate_nans: bool = True,

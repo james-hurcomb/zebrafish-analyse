@@ -1,7 +1,7 @@
 import numpy as np
 import trajectorytools as tt
 import matplotlib.path as pltpath
-
+from pymediainfo import MediaInfo
 
 class AcuityError(Exception):
     pass
@@ -13,18 +13,27 @@ class TrajectoryObject:
     """
 
     def __init__(self, raw_loaded_trajectories: tt.trajectories,
-                 invert_y: bool = True,
-                 video_dimensions: tuple = (1280, 720)):
+                 video_path: str,
+                 invert_y: bool = True):
 
         # # Set some generic params for easy inspection at a later date
         self.num_fish: int = len(raw_loaded_trajectories.identity_labels)
         self.num_frames: int = int(raw_loaded_trajectories.number_of_frames)
+        self.frame_rate: int = raw_loaded_trajectories.params['frame_rate']
         self.recording_length: float = raw_loaded_trajectories.number_of_frames / raw_loaded_trajectories.params['frame_rate']
+
+        self.video_path = video_path
+
+        media_info = MediaInfo.parse(self.video_path)
+
+        for track in media_info.tracks:
+            if track.track_type == 'Video':
+                self.video_dimensions = (track.width, track.height)
 
         # Organise trajectories data
         self.positions: np.ndarray = raw_loaded_trajectories.s
         if invert_y is True:
-            self.positions[:, :, 1] = video_dimensions[1] - self.positions[:, :, 1]
+            self.positions[:, :, 1] = self.video_dimensions[1] - self.positions[:, :, 1]
 
         self.modified_positions: np.ndarray = self.positions
 
@@ -74,9 +83,8 @@ class TrajectoryObject:
     def remove_polygon_from_frames(self,
                                    raw_vertices: list,
                                    output: bool = None):
-        vertices: np.ndarray = np.array(raw_vertices)
-        vertices[:, 1] = 720 - vertices[:, 1]
 
+        vertices: np.ndarray = np.array(raw_vertices)
         path = pltpath.Path(vertices)
         points_to_check = self.flatten_fish_positions()
         point_bools = ~path.contains_points(points_to_check)
