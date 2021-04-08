@@ -5,95 +5,18 @@ from tkinter import *
 from PIL import ImageTk, Image
 import av
 import numpy as np
+from shapely.geometry import Polygon
 # Import internal utils
 from zebrafishanalysis.structs import TrajectoryObject
 
-
-class ObjectOfInterest:
-
-    def __init__(self, marker, label):
-        self.x_pos = 0
-        self.y_pos = 0
-        self.marker = marker
-        self.label = label
-
-class SelectObjectPositions:
+class SelectPolygon:
 
     def __init__(self,
                  master: Tk,
-                 tr: TrajectoryObject):
-        # Initiate vars
+                 tr: TrajectoryObject,
+                 title_text: str = "za: Generic Window"):
         master: Tk = master
-
-        # Get path out of the TrajectoryObject
-        path = tr.video_path
-        self.dimensions = tr.video_dimensions
-        # Get frame of video. I **really** hate this, but cannot get it to work otherwise and cannot be bothered to \
-        # improve it as it works. Urgh.
-        vid_container = av.open(path)
-        for f in vid_container.decode(video=0):
-            fr = f.to_image()
-            break
-        img = ImageTk.PhotoImage(fr)
-
-        # Generate canvas, pack canvas into window, fill canvas with image
-        self.canvas: tk.Canvas = tk.Canvas(master)
-        self.canvas.pack()
-        self.canvas.configure(height=img.height(), width=img.width())
-        self.canvas.create_image(0, 0, anchor=tk.NW, image=img)
-
-        # Create objects
-        self.object_a = ObjectOfInterest(self.canvas.create_oval(0, 0, 0, 0, fill="red"),
-                                         self.canvas.create_text(0, 0, text=f""))
-        self.object_b = ObjectOfInterest(self.canvas.create_oval(0, 0, 0, 0, fill="blue"),
-                                         self.canvas.create_text(0, 0, text=f""))
-
-
-        # Bind click events
-        self.canvas.bind_all("<Button 1>",
-                             lambda event, obj=self.object_a: self.update_marker_coords(event, obj))
-        self.canvas.bind_all("<Button 3>",
-                             lambda event, obj=self.object_b: self.update_marker_coords(event, obj))
-
-        tk.mainloop()
-
-
-    def update_marker_coords(self,
-                             eventcoords: Event,
-                             obj: ObjectOfInterest,
-                             radius: int = 8) -> None:
-        """ Method to run on click event to update coordinates of objects
-        Args:
-            eventcoords (Event): Click event
-            obj (ObjectOfInterest): The object to update
-            radius (int): Radius of markers
-        Returns:
-            None
-        """
-
-        # Grab coordinates from eventcoords and set the object positions
-        x, y = eventcoords.x, eventcoords.y
-        # Note, we draw the circle using the var y, as this is the tkinter coordinate. However, we pass dim[1] - y to\
-        # the object, as this is the "real" coordinate. We also ensure when the label is updated, we update it with the\
-        # _text_ to match the "real" coordinate
-        obj.x_pos, obj.y_pos = x, self.dimensions[1] - y
-
-        # Update locations of objects, redraw circles and edit text on label
-        x_max, x_min = x + radius, x - radius
-        y_max, y_min = y + radius, y - radius
-        self.canvas.coords(obj.marker, x_max, y_max, x_min, y_min)
-        self.canvas.coords(obj.label, x + (radius * 2), y + (radius * 2))
-        self.canvas.itemconfigure(obj.label, text=f"{x}, {self.dimensions[1] - y}")
-
-
-class SelectRegionsToRemove:
-
-    def __init__(self,
-                 master: Tk,
-                 tr: TrajectoryObject):
-        # This is some nasty code duplication, but I can't figure out how to get tkinter to do class inheritance
-        master: Tk = master
-
+        master.title(title_text)
         path = tr.video_path
         self.dimensions = tr.video_dimensions
 
@@ -115,6 +38,7 @@ class SelectRegionsToRemove:
         self.canvas.bind_all("<Button 1>", self.place_marker)
 
         self.final_connection = self.canvas.create_line(0, 0, 0, 0)
+        self.centre = self.canvas.create_oval(0, 0, 0, 0, fill="blue")
 
         tk.mainloop()
 
@@ -134,23 +58,47 @@ class SelectRegionsToRemove:
         self.canvas.create_line(self.vertices[-2][0], self.vertices[-2][1], x, y)
         self.canvas.coords(self.final_connection, x, y, self.vertices[0][0], self.vertices[0][1])
 
+        if len(self.vertices) > 2:
+            polygon = Polygon(self.vertices)
+            cx, cy = polygon.centroid.x, polygon.centroid.y
+
+            x_max, x_min = cx + 5, cx - 5
+            y_max, y_min = cy + 5, cy - 5
+            self.canvas.coords(self.centre, x_max, y_max, x_min, y_min)
+
+
+def get_centroid(v: np.ndarray):
+    poly = Polygon(v)
+    centroid = poly.centroid
+    return centroid.x, centroid.y
+
+def invert_y(v: list,
+             tr: TrajectoryObject):
+    v_arr: np.array = np.array(v)
+    v_arr[:, 1] = tr.video_dimensions[1] - v_arr[:, 1]
+    return v_arr
 
 
 def select_pos_from_video(tr: TrajectoryObject):
-    root = tk.Tk()
-    win = SelectObjectPositions(root, tr)
-    root.mainloop()
-    # We convert the coordinates to the flipped status while they're being created, so don't need to bother here
-    return (win.object_a.x_pos, win.object_a.y_pos), (win.object_b.x_pos, win.object_b.y_pos)
+    root_a = tk.Tk()
+    obj_a = SelectPolygon(root_a, tr, "Select Object A")
+    obj_a_vertices: np.array = invert_y(obj_a.vertices, tr)
+    root_a.mainloop()
+
+    root_b = tk.Tk()
+    obj_b = SelectPolygon(root_b, tr, "Select Object B")
+    obj_b_vertices: np.array = invert_y(obj_b.vertices, tr)
+    root_b.mainloop()
+
+    return get_centroid(obj_a_vertices), get_centroid(obj_b_vertices)
 
 
 def select_polygon(tr: TrajectoryObject):
     root = tk.Tk()
-    win = SelectRegionsToRemove(root, tr)
+    win = SelectPolygon(root, tr)
     root.mainloop()
     # We need to flip the verticies
-    vertices: np.array = np.array(win.vertices)
-    vertices[:, 1] = tr.video_dimensions[1] - vertices[:, 1]
+    vertices: np.array = invert_y(win.vertices, tr)
     return vertices
 
 def load_gapless_trajectories(wo_gaps: str,
