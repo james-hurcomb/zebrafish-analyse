@@ -12,10 +12,10 @@ from zebrafishanalysis.structs import TrajectoryObject
 class SelectPolygon:
 
     def __init__(self,
-                 master: Tk,
+                 master: tk.Tk,
                  tr: TrajectoryObject,
                  title_text: str = "za: Generic Window"):
-        master: Tk = master
+        master: tk.Tk = master
         master.title(title_text)
         path: str = tr.video_path
         self.dimensions: tuple = tr.video_dimensions
