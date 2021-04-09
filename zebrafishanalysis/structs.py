@@ -3,6 +3,7 @@ import trajectorytools as tt
 import matplotlib.path as pltpath
 from pymediainfo import MediaInfo
 
+
 class AcuityError(Exception):
     pass
 
@@ -13,31 +14,33 @@ class TrajectoryObject:
     """
 
     def __init__(self, raw_loaded_trajectories: tt.trajectories,
-                 video_path: str,
+                 video_path: str = None,
                  invert_y: bool = True):
 
-        # # Set some generic params for easy inspection at a later date
+        # Set some generic params for easy inspection at a later date. Mostly just pull from tt properties
         self.num_fish: int = len(raw_loaded_trajectories.identity_labels)
         self.num_frames: int = int(raw_loaded_trajectories.number_of_frames)
         self.frame_rate: int = raw_loaded_trajectories.params['frame_rate']
         self.recording_length: float = raw_loaded_trajectories.number_of_frames / raw_loaded_trajectories.params['frame_rate']
 
-        self.video_path = video_path
+        # If a video path is supplied, we set the path as a property and extract the dimensions. A video path isn't
+        # necessary though, it's really only helpful for the GUI helpers
+        if video_path:
+            self.video_path: str = video_path
 
-        media_info = MediaInfo.parse(self.video_path)
+            media_info: MediaInfo.parse = MediaInfo.parse(self.video_path)
 
-        for track in media_info.tracks:
-            if track.track_type == 'Video':
-                self.video_dimensions = (track.width, track.height)
+            for track in media_info.tracks:
+                if track.track_type == 'Video':
+                    self.video_dimensions = (track.width, track.height)
 
         # Organise trajectories data
         self.positions: np.ndarray = raw_loaded_trajectories.s
         if invert_y is True:
             self.positions[:, :, 1] = self.video_dimensions[1] - self.positions[:, :, 1]
 
+        # This mostly exists for debugging purposes and will probably be removed at some point
         self.modified_positions: np.ndarray = self.positions
-
-        # Social data
 
     def __getitem__(self, item):
         # Slicing should return a fish range, preserving the dimensions of the original trajectory object (i.e. we want
@@ -65,6 +68,16 @@ class TrajectoryObject:
     @staticmethod
     def distance_between_points(point_a: tuple,
                                 point_b: tuple) -> float:
+        """Gets the distance between two points
+
+        Args:
+            point_a (tuple): (X, Y) of point a
+            point_b (tuple): (X, Y) of point b
+
+        Returns:
+            float: distance between points in pixels
+        """
+
         return np.sqrt((point_a[0] - point_b[0])**2 + (point_a[1] - point_b[1])**2)
 
     def flatten_fish_positions(self,
@@ -82,16 +95,22 @@ class TrajectoryObject:
 
     def remove_polygon_from_frames(self,
                                    raw_vertices: list,
-                                   output: bool = None):
+                                   output: bool = None) -> np.ndarray:
+        """Returns a flattened tuple containing all X and Y coordinates visited by fish in the range
+        Args:
+            raw_vertices (list): List of points that bind the polygon
+            output (bool): (debug tool) apply to self.positions or self.modified_positions?
+        Returns:
+            np.ndarray: positions sans polygonal bounded positions"""
 
         vertices: np.ndarray = np.array(raw_vertices)
-        path = pltpath.Path(vertices)
-        points_to_check = self.flatten_fish_positions()
-        point_bools = ~path.contains_points(points_to_check)
+        path: pltpath.Path = pltpath.Path(vertices)
+        points_to_check: np.ndarray = self.flatten_fish_positions()
+        point_bools: np.ndarray = ~path.contains_points(points_to_check)
 
         self.modified_positions = self.modified_positions[point_bools]
         if output is True:
-            self.positions = self.positions[point_bools]
+            self.apply_modifications()
 
         return self.modified_positions
 
@@ -104,13 +123,13 @@ class NovelObjectRecognitionTest(TrajectoryObject):
     def __init__(self,
                  raw_loaded_trajectories: tt.trajectories,
                  object_locations: tuple,
-                 invert_y: bool = False,
-                 video_dimensions: tuple = (1280, 720)
+                 video_path: str = None,
+                 invert_y: bool = False
                  ):
-        TrajectoryObject.__init__(self, raw_loaded_trajectories, invert_y, video_dimensions)
+        TrajectoryObject.__init__(self, raw_loaded_trajectories, video_path, invert_y)
 
-        self.object_a = object_locations[0]
-        self.object_b = object_locations[1]
+        self.object_a: tuple = object_locations[0]
+        self.object_b: tuple = object_locations[1]
 
     def determine_object_preference_by_frame(self,
                                              exploration_area_radius: float,

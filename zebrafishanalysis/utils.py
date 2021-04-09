@@ -1,13 +1,13 @@
 import logging
 import trajectorytools as tt
 import tkinter as tk
-from tkinter import *
+import sys
 from PIL import ImageTk, Image
 import av
 import numpy as np
 from shapely.geometry import Polygon
-# Import internal utils
 from zebrafishanalysis.structs import TrajectoryObject
+
 
 class SelectPolygon:
 
@@ -17,8 +17,8 @@ class SelectPolygon:
                  title_text: str = "za: Generic Window"):
         master: Tk = master
         master.title(title_text)
-        path = tr.video_path
-        self.dimensions = tr.video_dimensions
+        path: str = tr.video_path
+        self.dimensions: tuple = tr.video_dimensions
 
         # Get frame of video. I **really** hate this, but cannot get it to work otherwise and cannot be bothered to \
         # improve it as it works. Urgh.
@@ -34,7 +34,7 @@ class SelectPolygon:
         self.canvas.configure(height=img.height(), width=img.width())
         self.canvas.create_image(0, 0, anchor=tk.NW, image=img)
 
-        self.vertices = []
+        self.vertices: list = []
         self.canvas.bind_all("<Button 1>", self.place_marker)
 
         self.final_connection = self.canvas.create_line(0, 0, 0, 0)
@@ -67,46 +67,77 @@ class SelectPolygon:
             self.canvas.coords(self.centre, x_max, y_max, x_min, y_min)
 
 
-def get_centroid(v: np.ndarray):
+def get_centroid(v: np.ndarray) -> tuple:
+    """Gets centre point of a irregular shape, converts from POINT to tuple
+    Args:
+        v (np.ndarray): The list of coordinates of the points of shape
+    Returns:
+        tuple: (X, Y) of centroid. Note centre point of irregular shape may fall outside bounding of shape
+    """
     poly = Polygon(v)
     centroid = poly.centroid
     return centroid.x, centroid.y
 
+
 def invert_y(v: list,
-             tr: TrajectoryObject):
+             tr: TrajectoryObject = None,
+             dimensions: tuple = None) -> np.ndarray:
+    """Inverts y axis due to tkinter grid structure where (0, 0) is NW
+    Args:
+        v (list): The list of coordinates to flip
+        tr (TrajectoryObject): TrajectoryObject to get dimensions from
+        dimensions (tuple): Raw dimensions to use if TrajectoryObject not supplied
+    Returns:
+        np.ndarray: List with inverted y axis
+    """
+    if tr:
+        height: int = tr.video_dimensions[1]
+    elif dimensions:
+        height: int = dimensions[1]
+
     v_arr: np.array = np.array(v)
-    v_arr[:, 1] = tr.video_dimensions[1] - v_arr[:, 1]
+    v_arr[:, 1] = height - v_arr[:, 1]
     return v_arr
 
 
-def select_pos_from_video(tr: TrajectoryObject):
-    root_a = tk.Tk()
-    obj_a = SelectPolygon(root_a, tr, "Select Object A")
-    obj_a_vertices: np.array = invert_y(obj_a.vertices, tr)
-    root_a.mainloop()
+def select_pos_from_video(tr: TrajectoryObject) -> tuple:
+    """Allows for GUI selection of objects in NORT video
+    Args:
+        tr (TrajectoryObject): The trajectory object to select objects from
+    Returns:
+        tuple: Tuple of structure:
+            ((obj_a_X, obj_a_Y), (obj_b_X, obj_b_Y), ((obj_a_vertices_list), (obj_b_vertices_list)))
+    """
 
-    root_b = tk.Tk()
-    obj_b = SelectPolygon(root_b, tr, "Select Object B")
-    obj_b_vertices: np.array = invert_y(obj_b.vertices, tr)
-    root_b.mainloop()
+    obj_a: np.ndarray = select_polygon(tr, "Select Object A")
+    obj_b: np.ndarray = select_polygon(tr, "Select Object B")
 
-    return get_centroid(obj_a_vertices), get_centroid(obj_b_vertices)
+    return get_centroid(obj_a), get_centroid(obj_b), (obj_a, obj_b)
 
 
-def select_polygon(tr: TrajectoryObject):
+def select_polygon(tr: TrajectoryObject,
+                   window_title: str = "Select Polygon") -> np.ndarray:
+    """Helper for polygonal selection from video frame
+    Args:
+        tr (TrajectoryObject): The trajectory object to inspect
+        window_title (str): Help text to put in window title
+    Returns:
+        np.ndarray: array of vertices
+    """
     root = tk.Tk()
-    win = SelectPolygon(root, tr)
+    win = SelectPolygon(root, tr, window_title)
     root.mainloop()
     # We need to flip the verticies
     vertices: np.array = invert_y(win.vertices, tr)
     return vertices
 
+
 def load_gapless_trajectories(wo_gaps: str,
                               interpolate_nans: bool = True,
                               smooth: dict = {'sigma': 1}) -> tt.Trajectories:
-    """Function to load gapless trajectories from a idtrackerai numpy file
+    """Loads gapless trajectories from a idtrackerai numpy file
     Args:
-        wo_gaps (str): Path to long.npy
+        wo_gaps (str): Path to numpy file (should be trajectories_wo_gaps or trajectories .npy originally)
         interpolate_nans (bool): When loading from idtrackerai interpolate NaN values
         smooth (dict): Define how to smooth params when loading from idtrackerai
     Returns:
@@ -143,8 +174,16 @@ def load_gapless_trajectories(wo_gaps: str,
     return trajectories_raw
 
 
-def crush_multiple_objects(objects: list):
-    if len(objects) <= 1:
+def crush_multiple_objects(objects: list) -> np.ndarray:
+    """Combines the positions of fish from multiple objects
+    Args:
+        objects (list): list of TrajectoryObjects
+    Returns:
+        np.ndarray: Stack of all positions from all objects
+    """
+    try:
+        positions: list = [obj.flatten_fish_positions() for obj in objects]
+    except ValueError:
+        # todo error handling
         raise ValueError
-    positions = [obj.flatten_fish_positions() for obj in objects]
     return np.vstack(positions)

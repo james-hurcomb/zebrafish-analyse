@@ -46,6 +46,15 @@ def create_heatmap(trajectories: np.ndarray or TrajectoryObject,
 
 def get_measures(same_pref: tuple,
                  diff_pref: tuple) -> dict:
+    """NORT measures analysis
+
+    Args:
+        same_pref (tuple): Preferences during training phase
+        diff_pref (tuple): Preferences during testing phase ([1] is novel object]
+
+    Returns:
+        dict: e1, e2, d1, d2, d3 arranged in dict
+    """
 
     e1 = same_pref[0] + same_pref[1]
     e2 = diff_pref[0] + diff_pref[1]
