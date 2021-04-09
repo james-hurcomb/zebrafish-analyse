@@ -124,7 +124,7 @@ class NovelObjectRecognitionTest(TrajectoryObject):
                  raw_loaded_trajectories: tt.trajectories,
                  object_locations: tuple,
                  video_path: str = None,
-                 invert_y: bool = False
+                 invert_y: bool = True
                  ):
         TrajectoryObject.__init__(self, raw_loaded_trajectories, video_path, invert_y)
 
