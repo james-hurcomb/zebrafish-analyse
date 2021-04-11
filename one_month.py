@@ -1,10 +1,14 @@
 import zebrafishanalysis as za
 import os
+import csv
+import pandas as pd
+
+EXPLORATION_AREA: int = 250
 
 
 class Polygon:
 
-    def __init__(self, v):
+    def __init__(self, v: list) -> None:
         self.v = v
 
 
@@ -12,11 +16,23 @@ def remove_region(tr: dict,
                   v_list: dict) -> None:
     for fsh, removal_regions in v_list.items():
         for polygon_object in removal_regions:
-            print(fsh)
             tr[fsh].remove_polygon_from_frames(polygon_object.v, output=True)
 
-# DEFINE CONSTANTS:
+def rem_rg(tr: za.TrajectoryObject,
+           v: list) -> None:
+    for polygon_object in v:
+        tr.remove_polygon_from_frames(polygon_object.v, output=True)
 
+def measures_helper(same_tr: za.NovelObjectRecognitionTest,
+                    diff_tr: za.NovelObjectRecognitionTest) -> dict:
+    s = same_tr.determine_object_preference_by_frame(EXPLORATION_AREA)
+    d = diff_tr.determine_object_preference_by_frame(EXPLORATION_AREA)
+    return za.get_measures(s, d)
+
+def load_fish(slicer: slice = None):
+    pass
+
+# DEFINE CONSTANTS:
 
 # I worked out these values earlier for reproducibility. They can be got using a GUI instead
 regions_to_remove_same: dict = {
@@ -49,7 +65,7 @@ regions_to_remove_diff: dict = {
 
 training_obj_locations: dict = {
     'm_1_f_1': ((409.18561543150116, 375.2420852604783), (868.2508355129323, 358.1916594013368)),
-    'm_1_f_2': ((423.00424479427784, 375.6783314950366), (423.00424479427784, 375.6783314950366)),
+    'm_1_f_2': ((424.43770527698706, 374.66633822348734), (890.5503297765807, 356.0428536896992)),
     'm_1_f_3': ((414.80803488930775, 362.3900284584396), (876.1866666666666, 344.7154736842105)),
     'm_1_f_4': ((418.6220277466843, 361.05868186289473), (882.3823559201863, 345.34697322664505)),
     'm_1_f_5': ((416.0402194744166, 350.4632327846473), (878.4028311727014, 335.9190284607361)),
@@ -91,8 +107,8 @@ testing_obj_locations: dict = {
 # Onto the real processing code now
 
 if __name__ == "__main__":
-    same_fish = {}
-    diff_fish = {}
+    same_fish: dict = {}
+    diff_fish: dict = {}
     for fish in os.listdir("nor_data"):
         same = za.NovelObjectRecognitionTest(za.load_gapless_trajectories("nor_data/" + fish + "/same_obj.npy"),
                                              video_path="nor_data/" + fish + "/same_obj.mp4",
@@ -107,12 +123,65 @@ if __name__ == "__main__":
     remove_region(same_fish, regions_to_remove_same)
     remove_region(diff_fish, regions_to_remove_diff)
 
-    # Now run some statistics
+    # Run some statistics
+    measures: dict = {fish: measures_helper(same, diff_fish[fish]) for fish, same in same_fish.items()}
+    df_for_exp = pd.DataFrame(measures)
+    flipped: pd.DataFrame = df_for_exp.transpose()
+    flipped.to_csv(os.getcwd() + "/export_first10.csv")
 
+    # Construct dictionaries that hold the number of frames for each video. Now, what we're going to (try) to do, is
+    # grab a snapshot of the fish for 5 minute intervals. This is complicated by the fact my data doesn't have a
+    # consistent number of frames, which is really annoying
+    num_frames_same = {fish: tr.num_frames for fish, tr in same_fish.items()}
+    num_frames_diff = {fish: tr.num_frames for fish, tr in diff_fish.items()}
 
+    # Right, this is going to be horrific.
+    same_time_slices = {}
+    diff_time_slices = {}
+    for fish in os.listdir('nor_data'):
+        last_i = 0
 
+        same_time_slices[fish] = {}
+        diff_time_slices[fish] = {}
+        for i in range(18000, num_frames_same[fish] + 18000, 18000):
+            # Here we're incrementing in 5 minute intervals from 0 to the maximum possible value
+            # Python is super-forgiving, so we can just blast past the max value and it'll give us an irregular slice
+            fsh = za.NovelObjectRecognitionTest(za.load_gapless_trajectories("nor_data/" + fish + "/same_obj.npy"),
+                                                video_path="nor_data/" + fish + "/same_obj.mp4",
+                                                object_locations=training_obj_locations[str(fish)],
+                                                period=slice(last_i, i))
+            same_time_slices[fish][last_i] = fsh
+            last_i = i
+        last_i = 0
+        for i in range(18000, num_frames_diff[fish] + 18000, 18000):
+            # And now we do the same again for diff fish. todo: remove this duplication D:
+            fsh = za.NovelObjectRecognitionTest(za.load_gapless_trajectories("nor_data/" + fish + "/diff_obj.npy"),
+                                                video_path="nor_data/" + fish + "/same_obj.mp4",
+                                                object_locations=training_obj_locations[str(fish)],
+                                                period=slice(last_i, i))
+            diff_time_slices[fish][last_i] = fsh
+            last_i = i
 
+    # Okay, now we have two dictionaries with arrangement dict[fish][time_period]. The issue is, the numbers of frames
+    # aren't exactly the same. If the number of slices is
+    sliced_measures = {}
+    for fish_name, periods in same_time_slices.items():
+        for period_name, tr_same in periods.items():
+            if period_name not in sliced_measures:
+                sliced_measures[period_name] = {}
+            # Try to get the correspnding timepoint for the same fish
+            tr_diff: za.NovelObjectRecognitionTest = diff_time_slices[fish_name][period_name]
+            # Now we remove erroneous data. This is a really bad way of doing it, but whatever. todo: .get instead
+            try:
+                rem_rg(tr_same, regions_to_remove_same[fish_name])
+                rem_rg(tr_diff, regions_to_remove_diff[fish_name])
+            except KeyError:
+                pass
+            ms = measures_helper(tr_same, tr_diff)
+            sliced_measures[period_name][fish_name] = measures_helper(tr_same, tr_diff)
 
+    # Now we have sliced measures, we'll put them into a csv so I can do proper statistics in R
 
-
-
+    for n, time_period in sliced_measures.items():
+        df_for_exp = pd.DataFrame(time_period).transpose()
+        df_for_exp.to_csv(os.getcwd() + f"/export_{n}.csv")
