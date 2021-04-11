@@ -15,7 +15,8 @@ class TrajectoryObject:
 
     def __init__(self, raw_loaded_trajectories: tt.trajectories,
                  video_path: str = None,
-                 invert_y: bool = True):
+                 invert_y: bool = True,
+                 period: slice = None):
 
         # Set some generic params for easy inspection at a later date. Mostly just pull from tt properties
         self.num_fish: int = len(raw_loaded_trajectories.identity_labels)
@@ -34,8 +35,14 @@ class TrajectoryObject:
                 if track.track_type == 'Video':
                     self.video_dimensions = (track.width, track.height)
 
+        # period allows for slicing. So, we could (e.g.) grab recordings by 10 minute periods by passing incrementing
+        # slices. We apply this **before** frame removal for several important reasons.
+        if period is None:
+            self.positions: np.ndarray = raw_loaded_trajectories.s
+        else:
+            self.positions: np.ndarray = raw_loaded_trajectories.s[period, :, :]
+
         # Organise trajectories data
-        self.positions: np.ndarray = raw_loaded_trajectories.s
         if invert_y is True:
             self.positions[:, :, 1] = self.video_dimensions[1] - self.positions[:, :, 1]
 
@@ -124,9 +131,16 @@ class NovelObjectRecognitionTest(TrajectoryObject):
                  raw_loaded_trajectories: tt.trajectories,
                  object_locations: tuple,
                  video_path: str = None,
-                 invert_y: bool = True
+                 invert_y: bool = True,
+                 period: slice = None
                  ):
-        TrajectoryObject.__init__(self, raw_loaded_trajectories, video_path, invert_y)
+
+        # TODO: to be reworked to avoid duplication
+        TrajectoryObject.__init__(self,
+                                  raw_loaded_trajectories=raw_loaded_trajectories,
+                                  video_path=video_path,
+                                  invert_y=invert_y,
+                                  period=period)
 
         self.object_a: tuple = object_locations[0]
         self.object_b: tuple = object_locations[1]

@@ -60,12 +60,27 @@ def get_measures(same_pref: tuple,
     e2 = diff_pref[0] + diff_pref[1]
 
     d1 = diff_pref[1] - diff_pref[0]
-    d2 = d1 / e2
-    d3 = diff_pref[1] / e2
+    try:
+        d2 = d1 / e2
+        d3 = diff_pref[1] / e2
+    except ZeroDivisionError:
+        d2 = np.NaN
+        d3 = np.NaN
+
+    d1_familiar = same_pref[1] - same_pref[0]
+    try:
+        d2_familiar = d1_familiar / e1
+        d3_familiar = same_pref[1] / e1
+    except ZeroDivisionError:
+        d2_familiar = np.NaN
+        d3_familiar = np.NaN
 
     return {"e1": e1,
             "e2": e2,
             "d1": d1,
             "d2": d2,
-            "d3": d3}
+            "d3": d3,
+            "d1_familiar": d1_familiar,
+            "d2_familiar": d2_familiar,
+            "d3_familiar": d3_familiar}
 
