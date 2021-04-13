@@ -3,7 +3,6 @@ import trajectorytools as tt
 import matplotlib.path as pltpath
 from pymediainfo import MediaInfo
 
-
 class AcuityError(Exception):
     pass
 
@@ -28,13 +27,7 @@ class TrajectoryObject:
         # necessary though, it's really only helpful for the GUI helpers
         if video_path:
             self.video_path: str = video_path
-
-            media_info: MediaInfo.parse = MediaInfo.parse(self.video_path)
-
-            for track in media_info.tracks:
-                if track.track_type == 'Video':
-                    self.video_dimensions = (track.width, track.height)
-
+            self.video_dimensions: tuple = get_video_dimensions(self.video_path)
         # period allows for slicing. So, we could (e.g.) grab recordings by 10 minute periods by passing incrementing
         # slices. We apply this **before** frame removal for several important reasons.
         if period is None:
@@ -125,6 +118,7 @@ class TrajectoryObject:
         self.positions = self.modified_positions
 
 
+
 class NovelObjectRecognitionTest(TrajectoryObject):
 
     def __init__(self,
@@ -141,7 +135,6 @@ class NovelObjectRecognitionTest(TrajectoryObject):
                                   video_path=video_path,
                                   invert_y=invert_y,
                                   period=period)
-
         self.object_a: tuple = object_locations[0]
         self.object_b: tuple = object_locations[1]
 
@@ -179,3 +172,11 @@ class NovelObjectRecognitionTest(TrajectoryObject):
 
         return pref_a, pref_b, no_pref
 
+
+def get_video_dimensions(path: str) -> tuple:
+    media_info: MediaInfo.parse = MediaInfo.parse(path)
+
+    for track in media_info.tracks:
+        if track.track_type == 'Video':
+            video_dimensions = (track.width, track.height)
+    return video_dimensions

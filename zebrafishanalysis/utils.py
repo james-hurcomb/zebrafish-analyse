@@ -6,23 +6,22 @@ from PIL import ImageTk, Image
 import av
 import numpy as np
 from shapely.geometry import Polygon
-from zebrafishanalysis.structs import TrajectoryObject
+from zebrafishanalysis.structs import TrajectoryObject, get_video_dimensions
 
 
 class SelectPolygon:
 
     def __init__(self,
                  master: tk.Tk,
-                 tr: TrajectoryObject,
+                 vid_path: str,
                  title_text: str = "za: Generic Window"):
         master: tk.Tk = master
         master.title(title_text)
-        path: str = tr.video_path
-        self.dimensions: tuple = tr.video_dimensions
+        self.dimensions: tuple = get_video_dimensions(vid_path)
 
         # Get frame of video. I **really** hate this, but cannot get it to work otherwise and cannot be bothered to \
         # improve it as it works. Urgh.
-        vid_container = av.open(path)
+        vid_container = av.open(vid_path)
         for f in vid_container.decode(video=0):
             fr = f.to_image()
             break
@@ -100,7 +99,8 @@ def invert_y(v: list,
     return v_arr
 
 
-def select_pos_from_video(tr: TrajectoryObject) -> tuple:
+def select_pos_from_video(tr: TrajectoryObject = None,
+                          vid_path: str = None) -> tuple:
     """Allows for GUI selection of objects in NORT video
     Args:
         tr (TrajectoryObject): The trajectory object to select objects from
@@ -108,14 +108,16 @@ def select_pos_from_video(tr: TrajectoryObject) -> tuple:
         tuple: Tuple of structure:
             ((obj_a_X, obj_a_Y), (obj_b_X, obj_b_Y), ((obj_a_vertices_list), (obj_b_vertices_list)))
     """
-
-    obj_a: np.ndarray = select_polygon(tr, "Select Object A")
-    obj_b: np.ndarray = select_polygon(tr, "Select Object B")
+    if not vid_path:
+        vid_path = tr.video_path
+    obj_a: np.ndarray = select_polygon(video_path=vid_path, window_title="Select Object A")
+    obj_b: np.ndarray = select_polygon(video_path=vid_path, window_title="Select Object B")
 
     return get_centroid(obj_a), get_centroid(obj_b), (obj_a, obj_b)
 
 
-def select_polygon(tr: TrajectoryObject,
+def select_polygon(tr: TrajectoryObject = None,
+                   video_path: str = None,
                    window_title: str = "Select Polygon") -> np.ndarray:
     """Helper for polygonal selection from video frame
     Args:
@@ -124,11 +126,14 @@ def select_polygon(tr: TrajectoryObject,
     Returns:
         np.ndarray: array of vertices
     """
+    if not video_path:
+        video_path = tr.video_path
+
     root = tk.Tk()
-    win = SelectPolygon(root, tr, window_title)
+    win = SelectPolygon(root, vid_path=video_path, title_text=window_title)
     root.mainloop()
     # We need to flip the verticies
-    vertices: np.array = invert_y(win.vertices, tr)
+    vertices: np.array = invert_y(win.vertices, dimensions=get_video_dimensions(video_path))
     return vertices
 
 
