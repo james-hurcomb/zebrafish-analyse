@@ -2,40 +2,34 @@ import matplotlib.pyplot as plt
 import numpy as np
 from typing import Callable
 from zebrafishanalysis.structs import TrajectoryObject, NovelObjectRecognitionTest
+from scipy import stats
 
 
 def draw_figure(func: Callable) -> Callable:
-    """ Decorator to help draw figures
-
-    Args:
-        func (Callable): graphing function to perform
+    """
+    Decorator to help draw figures. Clears canvas, plots figure
+    :param func: graphing function to perform
+    :return: graphed function
     """
     def inner(*args, **kwargs):
         plt.clf()
-        if isinstance(args[0], TrajectoryObject) or isinstance(args[0], NovelObjectRecognitionTest):
-            trajectories = args[0].flatten_fish_positions()
-        else:
-            trajectories = args[0]
-        func(trajectories, *args[1:], **kwargs)
+        func(*args, **kwargs)
         plt.show()
     return inner
 
 
 @draw_figure
 def create_heatmap(trajectories: np.ndarray or TrajectoryObject,
-                   bins: int,
-                   fish_range: slice = None) -> np.ndarray:
-    """Plots a heatmap of fish positions
-
-    Args:
-        trajectories (TrajectoryObject): tuple containing two arrays, x and y pos to use
-        bins (bool): Number of bins to use when plotting
-        fish_range (tuple): Range of fish to run this on. e.g. (0, 0) = fish 0 / (1, 10) = fish 1 to fish 10. Defaults
-        to all fish
-
-    Returns:
-        TrajectoryObject: Processed trajectories
+                   bins: int) -> np.ndarray:
     """
+    Plots a heatmap of fish positions
+    :param trajectories: tuple containing two arrays, x and y pos to use. Can be an array,
+    or pass an entire TrajectoryObject and the decorator extracts it
+    :param bins: Number of bins to use when plotting
+    :return: Plot
+    """
+    if isinstance(trajectories, TrajectoryObject) or isinstance(trajectories, NovelObjectRecognitionTest):
+        trajectories = trajectories.flatten_fish_positions()
 
     x, y = trajectories[:, 0], trajectories[:, 1]
 
@@ -44,16 +38,13 @@ def create_heatmap(trajectories: np.ndarray or TrajectoryObject,
     return plt.imshow(heatmap.T, extent=extent, origin='lower')
 
 
-def get_measures(same_pref: tuple,
-                 diff_pref: tuple) -> dict:
-    """NORT measures analysis
-
-    Args:
-        same_pref (tuple): Preferences during training phase
-        diff_pref (tuple): Preferences during testing phase ([1] is novel object]
-
-    Returns:
-        dict: e1, e2, d1, d2, d3 arranged in dict
+def get_recognition_indices(same_pref: tuple,
+                            diff_pref: tuple) -> dict:
+    """
+    Gets measures of recognition from the novel object test
+    :param same_pref: Preferences during training phase
+    :param diff_pref: Preferences during testing phase, assuming [1] is the novel object
+    :return: dict of different measures
     """
 
     e1 = same_pref[0] + same_pref[1]
@@ -84,3 +75,22 @@ def get_measures(same_pref: tuple,
             "d2_familiar": d2_familiar,
             "d3_familiar": d3_familiar}
 
+
+def get_ri_significance(index: list,
+                        index_name: str = None,
+                        mu: float = None) -> float:
+    """
+    Performs 1sample t-test to determine if a particular recognition index is significant or not
+    :param index: A list of values to test
+    :param index_name: The name of the index (d1, d2, d3)
+    :param mu: A value to compare to, should index not be supplied
+    :return: float: the p-value
+    """
+    mus = {"d1": 0, "d2": 0, 'd3': 0.5}
+    if mu is None:
+        try:
+            mu = mus[index_name]
+        except KeyError:
+            raise KeyError("Index not recognised. Please supply a mu value.")
+
+    return stats.ttest_1samp(index, popmean=mu, nan_policy='omit', alternative='two-sided')[1]
