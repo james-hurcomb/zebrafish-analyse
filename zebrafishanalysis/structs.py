@@ -148,8 +148,8 @@ class NovelObjectRecognitionTest(TrajectoryObject):
         self.object_a: tuple = object_locations[0]
         self.object_b: tuple = object_locations[1]
 
-        self.positions_df['dist_obj_a'] = np.sqrt(np.sqrt((self.object_a[0] - self.positions_df['x_pos']) ** 2 + (self.object_a[1] - self.positions_df['y_pos']) ** 2))
-        self.positions_df['dist_obj_b'] = np.sqrt(np.sqrt((self.object_b[0] - self.positions_df['x_pos']) ** 2 + (self.object_b[1] - self.positions_df['y_pos']) ** 2))
+        self.positions_df['dist_obj_a'] = np.sqrt((self.object_a[0] - self.positions_df['x_pos']) ** 2 + (self.object_a[1] - self.positions_df['y_pos']) ** 2)
+        self.positions_df['dist_obj_b'] = np.sqrt((self.object_b[0] - self.positions_df['x_pos']) ** 2 + (self.object_b[1] - self.positions_df['y_pos']) ** 2)
 
     def determine_object_preference_by_frame(self,
                                              exploration_area_radius: float) -> tuple:
@@ -172,10 +172,9 @@ class NovelObjectRecognitionTest(TrajectoryObject):
 
         pref_a, pref_b, no_pref = 0, 0, 0
         # FILTER BY dist_obj_a and DIST_obj_b!
-        pref_a = len(self.positions_df[self.positions_df.dist_obj_a < exploration_area_radius])
-        pref_b = len(self.positions_df[self.positions_df.dist_obj_b < exploration_area_radius])
+        pref_a = len(self.positions_df[self.positions_df['dist_obj_a'] < exploration_area_radius])
+        pref_b = len(self.positions_df[self.positions_df['dist_obj_b'] < exploration_area_radius])
         no_pref = len(self.positions_df) - (pref_a + pref_b)
-
         return pref_a, pref_b, no_pref
 
 
