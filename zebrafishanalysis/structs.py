@@ -1,7 +1,9 @@
 import numpy as np
+import pandas as pd
 import trajectorytools as tt
 import matplotlib.path as pltpath
 from pymediainfo import MediaInfo
+
 
 class AcuityError(Exception):
     pass
@@ -21,7 +23,8 @@ class TrajectoryObject:
         self.num_fish: int = len(raw_loaded_trajectories.identity_labels)
         self.num_frames: int = int(raw_loaded_trajectories.number_of_frames)
         self.frame_rate: int = raw_loaded_trajectories.params['frame_rate']
-        self.recording_length: float = raw_loaded_trajectories.number_of_frames / raw_loaded_trajectories.params['frame_rate']
+        self.recording_length: float = raw_loaded_trajectories.number_of_frames / raw_loaded_trajectories.params[
+            'frame_rate']
 
         # If a video path is supplied, we set the path as a property and extract the dimensions. A video path isn't
         # necessary though, it's really only helpful for the GUI helpers
@@ -35,23 +38,29 @@ class TrajectoryObject:
         else:
             self.positions: np.ndarray = raw_loaded_trajectories.s[period, :, :]
 
-        # Organise trajectories data
+        # Organise trajectories data. tr.positions_df should be preferred over tr.positions, but both contain the
+        # same data.
         if invert_y is True:
             self.positions[:, :, 1] = self.video_dimensions[1] - self.positions[:, :, 1]
 
-        # This mostly exists for debugging purposes and will probably be removed at some point
-        self.modified_positions: np.ndarray = self.positions
+        # Now we've inverted the positions array, we need to turn it into a dataframe. This is because we're giving the
+        # option of removing frames. Calculations of speed assume the same time difference between datapoints, if we're
+        # removing all points that lie in one area, then we're creating irregular periods between datapoints. We want
+        # to store data in a table with cols X, Y, fish_id, frame_id. This is also good from a tidy-data pov.
 
-    def __getitem__(self, item):
-        # Slicing should return a fish range, preserving the dimensions of the original trajectory object (i.e. we want
-        # to avoid flattening it. This means a rather hacky solution to ensure we don't select). Other methods provided
-        # for flattening a fish range's positions
-        if type(item) is not slice:
-            item = slice(item, item+1)
-        return self.positions[:, item, :]
+        list_of_dicts: list = []
+        # There's probably a better way of doing this, but this way turned out to be quite quick anyway
+        for frame_id, frame in enumerate(self.positions):
+            for fish_id, fish in enumerate(frame):
+                list_of_dicts.append({'frame_id': frame_id,
+                                      'fish_id': fish_id,
+                                      'x_pos': fish[0],
+                                      'y_pos': fish[1]})
+        self.positions_df = pd.DataFrame(list_of_dicts, columns=['frame_id', 'fish_id', 'x_pos', 'y_pos'])
+        self.calculate_speeds()
 
     def get_fish_pos(self,
-                     fish_id: int,
+                     fish_num: int,
                      frame_num: int) -> tuple:
         """Returns the X,Y coordinates of a fish at a requested frame
 
@@ -62,8 +71,9 @@ class TrajectoryObject:
         Returns:
             tuple: (X,Y) coordinates of a fish at a particular time
         """
-
-        return self.positions[frame_num][fish_id][0], self.positions[frame_num][fish_id][1]
+        fish = self.positions_df[self.positions_df['fish_id'] == fish_num]
+        row = fish[fish['frame_id'] == frame_num]
+        return float(row['x_pos']), float(row['y_pos'])
 
     @staticmethod
     def distance_between_points(point_a: tuple,
@@ -78,46 +88,46 @@ class TrajectoryObject:
             float: distance between points in pixels
         """
 
-        return np.sqrt((point_a[0] - point_b[0])**2 + (point_a[1] - point_b[1])**2)
+        return np.sqrt((point_a[0] - point_b[0]) ** 2 + (point_a[1] - point_b[1]) ** 2)
 
-    def flatten_fish_positions(self,
-                               fish_range: slice = None) -> np.ndarray:
-        """Returns a flattened tuple containing all X and Y coordinates visited by fish in the range
-        Args:
-            fish_range (tuple): Range of fish to run on
+    def flatten_fish_positions(self) -> np.ndarray:
+        """
+        Returns X and Y positions of fish in numpy array
+        :return: np.ndarray: list of fish positions
+        """
+        # todo: re-implement fish-index based slicing
+        df_sel = self.positions_df[['x_pos', 'y_pos']]
+        return df_sel.to_numpy()
 
-        Returns:
-            tuple: x,y lists of fish positions"""
-        if fish_range is None:
-            fish_range = slice(0, self.num_fish)
-
-        return np.array(self.positions[:, fish_range, :]).reshape(self.positions.shape[1]*self.positions.shape[0], 2)
-
-    def remove_polygon_from_frames(self,
-                                   raw_vertices: list,
-                                   output: bool = None) -> np.ndarray:
+    def remove_polygon_from_frames(self, raw_vertices: list) -> None:
         """Returns a flattened tuple containing all X and Y coordinates visited by fish in the range
         Args:
             raw_vertices (list): List of points that bind the polygon
-            output (bool): (debug tool) apply to self.positions or self.modified_positions?
         Returns:
-            np.ndarray: positions sans polygonal bounded positions"""
+            None"""
 
         vertices: np.ndarray = np.array(raw_vertices)
         path: pltpath.Path = pltpath.Path(vertices)
-        points_to_check: np.ndarray = self.flatten_fish_positions()
-        point_bools: np.ndarray = ~path.contains_points(points_to_check)
 
-        self.modified_positions = self.modified_positions[point_bools]
-        if output is True:
-            self.apply_modifications()
+        points_to_check: np.ndarray = self.positions_df.to_numpy()[:, 2:4].astype(float)
+        point_bools = pd.Series(path.contains_points(points_to_check)).astype(bool)
+        self.positions_df = self.positions_df[-point_bools]
+        self.calculate_speeds()
 
-        return self.modified_positions
-
-    def apply_modifications(self) -> None:
-        self.positions = self.modified_positions
-
-
+    def calculate_speeds(self) -> None:
+        """
+        Method invoked when a dataframe update occurs, e.g. when we remove rows from it
+        :return: None
+        """
+        self.positions_df.sort_values(['fish_id', 'frame_id'], inplace=True)
+        self.positions_df['fish_match'] = self.positions_df['fish_id'].diff().eq(0)
+        distances = self.positions_df.diff().fillna(0)
+        self.positions_df['distance'] = np.where(self.positions_df['fish_match'] == True,
+                                                 np.sqrt(distances.x_pos ** 2 + distances.y_pos ** 2), 0)
+        # We are making an assumption here that the fish spent all their time
+        # travelling between the two points, but it's the best we can do in the situation.
+        # todo: consider option to NaN speeds if no previous frame to compare to?
+        self.positions_df['speed'] = self.positions_df.distance / (self.positions_df['frame_id'].diff() * (1 / self.frame_rate))
 
 class NovelObjectRecognitionTest(TrajectoryObject):
 
@@ -139,36 +149,35 @@ class NovelObjectRecognitionTest(TrajectoryObject):
         self.object_b: tuple = object_locations[1]
 
     def determine_object_preference_by_frame(self,
-                                             exploration_area_radius: float,
-                                             fish_range: tuple = None) -> tuple:
-        """Returns number of frames fish had preference for a particular object
+                                             exploration_area_radius: float) -> tuple:
+        """Returns number of frames fish had preference for a particular object.
 
         Args:
             exploration_area_radius (float): Frame to inspect
-            fish_range (tuple): Range of fish to run on. Defaults to all fish
 
         Returns:
             tuple: num frames closer to object a, num frames closer to object b
         """
 
         if self.distance_between_points(self.object_a, self.object_b) <= exploration_area_radius:
-            raise AcuityError(f"Exploration area supplied ({exploration_area_radius}) is greater than distance between novel objects "
-                              f"(({self.distance_between_points(self.object_a, self.object_b)}).")
+            raise AcuityError(
+                f"Exploration area supplied ({exploration_area_radius}) is greater than distance between novel objects "
+                f"(({self.distance_between_points(self.object_a, self.object_b)}).")
 
-        if fish_range is None:
-            fish_range = (0, self.num_fish)
+        # if fish_range is None:
+        #     fish_range = (0, self.num_fish)
 
         pref_a, pref_b, no_pref = 0, 0, 0
-        for frame in self.positions:
-            for fish in frame[fish_range[0]:fish_range[1] + 1]:
-                dist_to_a, dist_to_b = self.distance_between_points(fish, self.object_a), \
-                                       self.distance_between_points(fish, self.object_b)
-                if dist_to_a < exploration_area_radius:
-                    pref_a += 1
-                elif dist_to_b < exploration_area_radius:
-                    pref_b += 1
-                else:
-                    no_pref += 1
+
+        for i, row in self.positions_df.iterrows():
+            dist_to_a = self.distance_between_points((row['x_pos'], row['y_pos']), self.object_a)
+            dist_to_b = self.distance_between_points((row['x_pos'], row['y_pos']), self.object_b)
+            if dist_to_a < exploration_area_radius:
+                pref_a += 1
+            elif dist_to_b < exploration_area_radius:
+                pref_b += 1
+            else:
+                no_pref += 1
 
         return pref_a, pref_b, no_pref
 
