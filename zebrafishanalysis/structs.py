@@ -108,10 +108,10 @@ class TrajectoryObject:
 
         vertices: np.ndarray = np.array(raw_vertices)
         path: pltpath.Path = pltpath.Path(vertices)
-
         points_to_check: np.ndarray = self.positions_df.to_numpy()[:, 2:4].astype(float)
         point_bools = pd.Series(path.contains_points(points_to_check)).astype(bool)
         self.positions_df = self.positions_df[-point_bools]
+        self.positions_df.reset_index(inplace=True)
         self.calculate_speeds()
 
     def calculate_speeds(self) -> None:
@@ -148,6 +148,9 @@ class NovelObjectRecognitionTest(TrajectoryObject):
         self.object_a: tuple = object_locations[0]
         self.object_b: tuple = object_locations[1]
 
+        self.positions_df['dist_obj_a'] = np.sqrt(np.sqrt((self.object_a[0] - self.positions_df['x_pos']) ** 2 + (self.object_a[1] - self.positions_df['y_pos']) ** 2))
+        self.positions_df['dist_obj_b'] = np.sqrt(np.sqrt((self.object_b[0] - self.positions_df['x_pos']) ** 2 + (self.object_b[1] - self.positions_df['y_pos']) ** 2))
+
     def determine_object_preference_by_frame(self,
                                              exploration_area_radius: float) -> tuple:
         """Returns number of frames fish had preference for a particular object.
@@ -168,16 +171,10 @@ class NovelObjectRecognitionTest(TrajectoryObject):
         #     fish_range = (0, self.num_fish)
 
         pref_a, pref_b, no_pref = 0, 0, 0
-
-        for i, row in self.positions_df.iterrows():
-            dist_to_a = self.distance_between_points((row['x_pos'], row['y_pos']), self.object_a)
-            dist_to_b = self.distance_between_points((row['x_pos'], row['y_pos']), self.object_b)
-            if dist_to_a < exploration_area_radius:
-                pref_a += 1
-            elif dist_to_b < exploration_area_radius:
-                pref_b += 1
-            else:
-                no_pref += 1
+        # FILTER BY dist_obj_a and DIST_obj_b!
+        pref_a = len(self.positions_df[self.positions_df.dist_obj_a < exploration_area_radius])
+        pref_b = len(self.positions_df[self.positions_df.dist_obj_b < exploration_area_radius])
+        no_pref = len(self.positions_df) - (pref_a + pref_b)
 
         return pref_a, pref_b, no_pref
 
