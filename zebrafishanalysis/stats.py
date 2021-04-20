@@ -94,3 +94,6 @@ def get_ri_significance(index: list,
             raise KeyError("Index not recognised. Please supply a mu value.")
 
     return stats.ttest_1samp(index, popmean=mu, nan_policy='omit', alternative='two-sided')[1]
+
+# def speeds_skew(tr: TrajectoryObject or NovelObjectRecognitionTest) -> float:
+#     print(stats.skewtest(tr.positions_df['speed'])

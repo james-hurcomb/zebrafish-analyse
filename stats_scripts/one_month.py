@@ -3,7 +3,8 @@ import os
 import matplotlib.pyplot as plt
 import pandas as pd
 from stats_scripts.data_dicts import *
-
+from scipy import stats
+import numpy as np
 # Set some constants
 EXPLORATION_AREA: int = 250
 FOLDER: str = "nor_data"
@@ -22,7 +23,6 @@ def remove_region(tr: dict,
     :return:
     """
     for fish_id, removal_regions in v_list.items():
-        print(fish_id)
         rem_rg(tr[fish_id], removal_regions)
 
 
@@ -73,24 +73,51 @@ def load_fish(fish_id: str,
 
 
 if __name__ == "__main__":
-    same_fish: dict = {}
-    diff_fish: dict = {}
-    for fish in os.listdir("nor_data"):
-        same_raw, diff_raw = load_fish(fish, same=True), load_fish(fish, same=False)
-        same_fish[str(fish)] = same_raw
-        diff_fish[str(fish)] = diff_raw
-
     # Full analysis
+    same_fish = {fish: load_fish(fish, same=True) for fish in os.listdir("nor_data")}
+    diff_fish = {fish: load_fish(fish, same=False) for fish in os.listdir("nor_data")}
 
-    # Remove the erronous data I discovered and bounded at the start of the file
+    # Remove the erroneous data I discovered and bounded at the start of the file
     remove_region(same_fish, regions_to_remove_same)
     remove_region(diff_fish, regions_to_remove_diff)
+
+
+    for name, fish in same_fish.items():
+        fish.drop_errors()
+        diff_fish[name].drop_errors()
 
     # Run some statistics
     measures: dict = {fish: measures_helper(same, diff_fish[fish]) for fish, same in same_fish.items()}
     df_for_exp = pd.DataFrame(measures)
     full_measures: pd.DataFrame = df_for_exp.transpose()
     full_measures.to_csv(os.getcwd() + "/all_fish_by_fish.csv")
+
+    plt.hist([measures_dict['d3'] for measures_dict in measures.values()])
+    plt.show()
+
+    print(stats.normaltest([measures_dict['d3'] for measures_dict in measures.values()]))
+
+
+
+    plt.hist(za.crush_multiple_objects(list(same_fish.values()), 'accelerations'), bins=100)
+    plt.show()
+    for n, fish in same_fish.items():
+        plt.clf()
+        print(n)
+        print(stats.skew(fish.positions_df['speed'].to_numpy(), nan_policy='omit'))
+        plt.hist(fish.positions_df['speed'])
+        plt.show()
+    for n, fish in diff_fish.items():
+        plt.clf()
+        print(n)
+        print(stats.skew(fish.positions_df['speed'].to_numpy(), nan_policy='omit'))
+        plt.hist(fish.positions_df['speed'])
+        plt.show()
+
+    f = same_fish['m_1_f_1'].positions_df['speed'].to_numpy()
+    print(stats.skewtest(f, nan_policy='omit'))
+    exit(0)
+
 
     # Analysis by timepoint
 
@@ -123,7 +150,7 @@ if __name__ == "__main__":
         for period_name, tr_same in periods.items():
             if period_name not in sliced_measures:
                 sliced_measures[period_name] = {}
-            # Try to get the corresponding timepoint for the same fish
+            # Try to get the correspnding timepoint for the same fish
             tr_diff: za.NovelObjectRecognitionTest = diff_time_slices[fish_name][period_name]
             # Now we remove erroneous data. This is a really bad way of doing it, but whatever. todo: .get instead
             try:
@@ -139,3 +166,6 @@ if __name__ == "__main__":
     for n, time_period in sliced_measures.items():
         df_for_exp = pd.DataFrame(time_period).transpose()
         df_for_exp.to_csv(os.getcwd() + f"/export_{n}.csv")
+
+    plt.boxplot(df_for_exp['d3'])
+    plt.show()

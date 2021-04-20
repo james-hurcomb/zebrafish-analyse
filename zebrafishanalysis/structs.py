@@ -99,22 +99,27 @@ class TrajectoryObject:
         df_sel = self.positions_df[['x_pos', 'y_pos']]
         return df_sel.to_numpy()
 
-    def remove_polygon_from_frames(self, raw_vertices: list) -> None:
-        """Returns a flattened tuple containing all X and Y coordinates visited by fish in the range
-        Args:
-            raw_vertices (list): List of points that bind the polygon
-        Returns:
-            None"""
+    def remove_polygon_from_frames(self,
+                                   raw_vertices: list,
+                                   calc_speed_including_skipped_frames: bool = False) -> None:
+        """
+        Removes all points falling inside a particular polygon from the positions_df array
+        :param raw_vertices: List of vertices bounding the polygon of interest
+        :param calc_speed_including_skipped_frames: Should speeds after skipped frames be NaN or calculated based on the
+        time elapsed? Defaults to NaN
+        :return:
+        """
 
+        self.positions_df.reset_index(inplace=True)
         vertices: np.ndarray = np.array(raw_vertices)
         path: pltpath.Path = pltpath.Path(vertices)
-        points_to_check: np.ndarray = self.positions_df.to_numpy()[:, 2:4].astype(float)
+        points_to_check: np.ndarray = self.positions_df[['x_pos', 'y_pos']].to_numpy().astype(float)
         point_bools = pd.Series(path.contains_points(points_to_check)).astype(bool)
         self.positions_df = self.positions_df[-point_bools]
-        self.positions_df.reset_index(inplace=True)
-        self.calculate_speeds()
+        self.calculate_speeds(include_skipped_frames=calc_speed_including_skipped_frames)
 
-    def calculate_speeds(self) -> None:
+    def calculate_speeds(self,
+                         include_skipped_frames: bool = False) -> None:
         """
         Method invoked when a dataframe update occurs, e.g. when we remove rows from it
         :return: None
@@ -123,11 +128,28 @@ class TrajectoryObject:
         self.positions_df['fish_match'] = self.positions_df['fish_id'].diff().eq(0)
         distances = self.positions_df.diff().fillna(0)
         self.positions_df['distance'] = np.where(self.positions_df['fish_match'] == True,
-                                                 np.sqrt(distances.x_pos ** 2 + distances.y_pos ** 2), 0)
-        # We are making an assumption here that the fish spent all their time
-        # travelling between the two points, but it's the best we can do in the situation.
-        # todo: consider option to NaN speeds if no previous frame to compare to?
-        self.positions_df['speed'] = self.positions_df.distance / (self.positions_df['frame_id'].diff() * (1 / self.frame_rate))
+                                                 np.sqrt(distances.x_pos ** 2 + distances.y_pos ** 2), np.NaN)
+        # We can now calculate speeds. If include_skipped_frames is true, we'll just take an average over the timpoints
+        # where the fish is missing. Obviously, this can distort the numbers quite a lot if the fish is misisng for
+        # a long time, so I don't do this by default
+        if include_skipped_frames is True:
+            self.positions_df['speed'] = self.positions_df.distance / (self.positions_df['frame_id'].diff() * (1 / self.frame_rate))
+            self.positions_df['acceleration'] = self.positions_df['speed'].diff() / (self.positions_df['frame_id'].diff() * (1 / self.frame_rate))
+
+        else:
+            self.positions_df['frame_match'] = self.positions_df['frame_id'].diff().eq(1)
+            self.positions_df['speed'] = np.where(self.positions_df['frame_match'] == True,
+                                                  self.positions_df.distance / (self.positions_df['frame_id'].diff() * (1 / self.frame_rate)), np.NaN)
+            self.positions_df['acceleration'] = np.where(self.positions_df['frame_match'] == True,
+                                                         self.positions_df['speed'].diff() / (self.positions_df['frame_id'].diff() * (1 / self.frame_rate)), np.NaN)
+
+    def drop_errors(self, sds: int = 4):
+        mean = self.positions_df['acceleration'].mean()
+        sd = self.positions_df['acceleration'].std()
+
+        self.positions_df = self.positions_df[self.positions_df['acceleration'] < mean + sd * sds]
+        self.positions_df = self.positions_df[self.positions_df['acceleration'] > mean - sd * sds]
+
 
 class NovelObjectRecognitionTest(TrajectoryObject):
 

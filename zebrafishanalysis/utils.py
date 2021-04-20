@@ -179,16 +179,34 @@ def load_gapless_trajectories(wo_gaps: str,
     return trajectories_raw
 
 
-def crush_multiple_objects(objects: list) -> np.ndarray:
+def crush_multiple_objects(objects: list,
+                           factor: str = 'positions') -> np.ndarray:
     """Combines the positions of fish from multiple objects
     Args:
         objects (list): list of TrajectoryObjects
     Returns:
         np.ndarray: Stack of all positions from all objects
     """
-    try:
-        positions: list = [obj.flatten_fish_positions() for obj in objects]
-    except ValueError:
-        # todo error handling
-        raise ValueError
-    return np.vstack(positions)
+    if factor == 'positions':
+        try:
+            positions: list = [obj.flatten_fish_positions() for obj in objects]
+        except ValueError:
+            # todo error handling
+            raise ValueError
+        return np.vstack(positions)
+    elif factor == 'speeds' or factor == 'speed':
+        try:
+            speeds: list = [obj.positions_df[['speed']].to_numpy() for obj in objects]
+        except ValueError:
+            raise ValueError
+        return np.vstack(speeds)
+    elif factor == 'accelerations' or factor == 'acceleration':
+        try:
+            speeds: list = [obj.positions_df[['acceleration']].to_numpy() for obj in objects]
+        except ValueError:
+            raise ValueError
+        return np.vstack(speeds)
+    else:
+        raise ValueError("This factor does not exist")
+
+
