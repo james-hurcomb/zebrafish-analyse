@@ -135,7 +135,6 @@ class TrajectoryObject:
         if include_skipped_frames is True:
             self.positions_df['speed'] = self.positions_df.distance / (self.positions_df['frame_id'].diff() * (1 / self.frame_rate))
             self.positions_df['acceleration'] = self.positions_df['speed'].diff() / (self.positions_df['frame_id'].diff() * (1 / self.frame_rate))
-
         else:
             self.positions_df['frame_match'] = self.positions_df['frame_id'].diff().eq(1)
             self.positions_df['speed'] = np.where(self.positions_df['frame_match'] == True,
@@ -143,12 +142,31 @@ class TrajectoryObject:
             self.positions_df['acceleration'] = np.where(self.positions_df['frame_match'] == True,
                                                          self.positions_df['speed'].diff() / (self.positions_df['frame_id'].diff() * (1 / self.frame_rate)), np.NaN)
 
-    def drop_errors(self, sds: int = 4):
-        mean = self.positions_df['acceleration'].mean()
-        sd = self.positions_df['acceleration'].std()
+    def drop_errors(self,
+                    factor: str,
+                    cutoff: int,
+                    sds: int = 2,
+                    inplace: bool = False,
+                    recalculate: bool = False,
+                    include_skip_frames_on_recalc: bool = False):
+        try:
+            output_df = self.positions_df[self.positions_df[factor] < cutoff]
+            output_df = output_df[output_df[factor] > -cutoff]
 
-        self.positions_df = self.positions_df[self.positions_df['acceleration'] < mean + sd * sds]
-        self.positions_df = self.positions_df[self.positions_df['acceleration'] > mean - sd * sds]
+            mean = output_df[factor].mean()
+            sd = output_df[factor].std()
+
+            output_df = self.positions_df[self.positions_df[factor] < mean + sd * sds]
+            output_df = output_df[output_df[factor] > mean - sd * sds]
+
+            if inplace is True:
+                self.positions_df = output_df
+                if recalculate is True:
+                    self.calculate_speeds(include_skipped_frames=include_skip_frames_on_recalc)
+        except KeyError:
+            raise KeyError(f"{factor} does not exist in positions_df")
+
+        return output_df
 
 
 class NovelObjectRecognitionTest(TrajectoryObject):

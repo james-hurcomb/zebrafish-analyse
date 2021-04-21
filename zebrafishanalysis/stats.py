@@ -37,6 +37,14 @@ def create_heatmap(trajectories: np.ndarray or TrajectoryObject,
     extent = [x_edges[0], x_edges[-1], y_edges[0], y_edges[-1]]
     return plt.imshow(heatmap.T, extent=extent, origin='lower')
 
+@draw_figure
+def create_histogram(trajectories: TrajectoryObject or list,
+                     factor: str,
+                     bins: int = 10):
+    if isinstance(trajectories, TrajectoryObject) or isinstance(trajectories, NovelObjectRecognitionTest):
+        trajectories = trajectories.positions_df[factor]
+
+    return plt.hist(trajectories, bins=bins)
 
 def get_recognition_indices(same_pref: tuple,
                             diff_pref: tuple) -> dict:
@@ -95,5 +103,3 @@ def get_ri_significance(index: list,
 
     return stats.ttest_1samp(index, popmean=mu, nan_policy='omit', alternative='two-sided')[1]
 
-# def speeds_skew(tr: TrajectoryObject or NovelObjectRecognitionTest) -> float:
-#     print(stats.skewtest(tr.positions_df['speed'])

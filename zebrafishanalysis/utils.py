@@ -146,7 +146,7 @@ def load_gapless_trajectories(wo_gaps: str,
         interpolate_nans (bool): When loading from idtrackerai interpolate NaN values
         smooth (dict): Define how to smooth params when loading from idtrackerai
     Returns:
-        TrajectoryObject: Processed trajectories
+        tt.Trajectories: Processed trajectories
     """
 
     warnings: list = []
