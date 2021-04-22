@@ -57,7 +57,7 @@ class TrajectoryObject:
                                       'x_pos': fish[0],
                                       'y_pos': fish[1]})
         self.positions_df = pd.DataFrame(list_of_dicts, columns=['frame_id', 'fish_id', 'x_pos', 'y_pos'])
-        self.calculate_speeds()
+        self.calculate_speeds(inplace=True)
 
     def get_fish_pos(self,
                      fish_num: int,
@@ -101,7 +101,8 @@ class TrajectoryObject:
 
     def remove_polygon_from_frames(self,
                                    raw_vertices: list,
-                                   calc_speed_including_skipped_frames: bool = False) -> None:
+                                   inplace: bool = False,
+                                   calc_speed_including_skipped_frames: bool = False) -> pd.DataFrame:
         """
         Removes all points falling inside a particular polygon from the positions_df array
         :param raw_vertices: List of vertices bounding the polygon of interest
@@ -109,60 +110,81 @@ class TrajectoryObject:
         time elapsed? Defaults to NaN
         :return:
         """
+        working_df = self.positions_df
 
-        self.positions_df.reset_index(inplace=True)
+        working_df.reset_index(inplace=True)
         vertices: np.ndarray = np.array(raw_vertices)
         path: pltpath.Path = pltpath.Path(vertices)
-        points_to_check: np.ndarray = self.positions_df[['x_pos', 'y_pos']].to_numpy().astype(float)
+        points_to_check: np.ndarray = working_df[['x_pos', 'y_pos']].to_numpy().astype(float)
         point_bools = pd.Series(path.contains_points(points_to_check)).astype(bool)
-        self.positions_df = self.positions_df[-point_bools]
-        self.calculate_speeds(include_skipped_frames=calc_speed_including_skipped_frames)
+        working_df = working_df[-point_bools]
+        df_w_speeds = self.calculate_speeds(raw_df=working_df, include_skipped_frames=calc_speed_including_skipped_frames)
+        if inplace is True:
+            self.positions_df = df_w_speeds
+        return df_w_speeds
 
     def calculate_speeds(self,
-                         include_skipped_frames: bool = False) -> None:
+                         raw_df: pd.DataFrame = None,
+                         inplace: bool = False,
+                         include_skipped_frames: bool = False) -> pd.DataFrame:
         """
         Method invoked when a dataframe update occurs, e.g. when we remove rows from it
         :return: None
         """
-        self.positions_df.sort_values(['fish_id', 'frame_id'], inplace=True)
-        self.positions_df['fish_match'] = self.positions_df['fish_id'].diff().eq(0)
-        distances = self.positions_df.diff().fillna(0)
-        self.positions_df['distance'] = np.where(self.positions_df['fish_match'] == True,
-                                                 np.sqrt(distances.x_pos ** 2 + distances.y_pos ** 2), np.NaN)
+        if raw_df is None:
+            df = self.positions_df.copy()
+        else:
+            # This is required to suppress some weird errors that occur because of
+            df = raw_df.copy()
+
+        df.sort_values(['fish_id', 'frame_id'], inplace=True)
+        df['fish_match'] = df['fish_id'].diff().eq(0)
+        distances = df.diff().fillna(0)
+        df['distance'] = np.where(df['fish_match'] == True,
+                                    np.sqrt(distances.x_pos ** 2 + distances.y_pos ** 2), np.NaN)
         # We can now calculate speeds. If include_skipped_frames is true, we'll just take an average over the timpoints
         # where the fish is missing. Obviously, this can distort the numbers quite a lot if the fish is misisng for
         # a long time, so I don't do this by default
         if include_skipped_frames is True:
-            self.positions_df['speed'] = self.positions_df.distance / (self.positions_df['frame_id'].diff() * (1 / self.frame_rate))
-            self.positions_df['acceleration'] = self.positions_df['speed'].diff() / (self.positions_df['frame_id'].diff() * (1 / self.frame_rate))
+            df['speed'] = df.distance / (df['frame_id'].diff() * (1 / self.frame_rate))
+            df['acceleration'] = df['speed'].diff() / (df['frame_id'].diff() * (1 / self.frame_rate))
         else:
-            self.positions_df['frame_match'] = self.positions_df['frame_id'].diff().eq(1)
-            self.positions_df['speed'] = np.where(self.positions_df['frame_match'] == True,
-                                                  self.positions_df.distance / (self.positions_df['frame_id'].diff() * (1 / self.frame_rate)), np.NaN)
-            self.positions_df['acceleration'] = np.where(self.positions_df['frame_match'] == True,
-                                                         self.positions_df['speed'].diff() / (self.positions_df['frame_id'].diff() * (1 / self.frame_rate)), np.NaN)
+            df['frame_match'] = df['frame_id'].diff().eq(1)
+            df['speed'] = np.where(df['frame_match'] == True,
+                                   df.distance / (df['frame_id'].diff() * (1 / self.frame_rate)), np.NaN)
+            df['acceleration'] = np.where(df['frame_match'] == True,
+                                          df['speed'].diff() / (df['frame_id'].diff() * (1 / self.frame_rate)), np.NaN)
+        if inplace is True:
+            self.positions_df = df
+        return df
 
     def drop_errors(self,
                     factor: str,
                     cutoff: int,
-                    sds: int = 2,
+                    df: pd.DataFrame = None,
+                    sds: int = None,
                     inplace: bool = False,
                     recalculate: bool = False,
                     include_skip_frames_on_recalc: bool = False):
+        if df is None:
+            df = self.positions_df
+
         try:
-            output_df = self.positions_df[self.positions_df[factor] < cutoff]
+            output_df = df[df[factor] < cutoff]
             output_df = output_df[output_df[factor] > -cutoff]
 
             mean = output_df[factor].mean()
             sd = output_df[factor].std()
+            if sds:
+                output_df = output_df[output_df[factor] < mean + sd * sds]
+                output_df = output_df[output_df[factor] > mean - sd * sds]
 
-            output_df = self.positions_df[self.positions_df[factor] < mean + sd * sds]
-            output_df = output_df[output_df[factor] > mean - sd * sds]
+            if recalculate is True:
+                output_df = self.calculate_speeds(df=output_df, include_skipped_frames=include_skip_frames_on_recalc)
 
             if inplace is True:
                 self.positions_df = output_df
-                if recalculate is True:
-                    self.calculate_speeds(include_skipped_frames=include_skip_frames_on_recalc)
+
         except KeyError:
             raise KeyError(f"{factor} does not exist in positions_df")
 
