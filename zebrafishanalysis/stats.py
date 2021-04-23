@@ -1,8 +1,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+from scipy import stats
 from typing import Callable
 from zebrafishanalysis.structs import TrajectoryObject, NovelObjectRecognitionTest
-from scipy import stats
 
 
 def draw_figure(func: Callable) -> Callable:
@@ -19,8 +20,8 @@ def draw_figure(func: Callable) -> Callable:
 
 
 @draw_figure
-def create_heatmap(trajectories: np.ndarray or TrajectoryObject,
-                   bins: int) -> np.ndarray:
+def draw_heatmap(trajectories: np.ndarray or TrajectoryObject,
+                 bins: int) -> np.ndarray:
     """
     Plots a heatmap of fish positions
     :param trajectories: tuple containing two arrays, x and y pos to use. Can be an array,
@@ -37,14 +38,55 @@ def create_heatmap(trajectories: np.ndarray or TrajectoryObject,
     extent = [x_edges[0], x_edges[-1], y_edges[0], y_edges[-1]]
     return plt.imshow(heatmap.T, extent=extent, origin='lower')
 
+
 @draw_figure
-def create_histogram(trajectories: TrajectoryObject or list,
-                     factor: str,
-                     bins: int = 10):
+def draw_histogram(trajectories: TrajectoryObject or pd.DataFrame,
+                   factor: str,
+                   bins: int = 10):
+    """
+    Draws a histogram
+    :param trajectories: A TrajectoryObject or Filtered DataFrame
+    :param factor: The factor to plot
+    :param bins: The number of bins to use
+    :return:
+    """
     if isinstance(trajectories, TrajectoryObject) or isinstance(trajectories, NovelObjectRecognitionTest):
         trajectories = trajectories.positions_df[factor]
+    else:
+        trajectories = trajectories[factor]
 
     return plt.hist(trajectories, bins=bins)
+
+
+@draw_figure
+def draw_rolling(series_to_plot):
+
+    datapoints_index: np.ndarray = series_to_plot.index.to_numpy()
+    series_to_plot: np.ndarray = series_to_plot.to_numpy()
+
+    # Mask & remove NaNs, create polyfit line then a 1D line
+    idx = np.isfinite(datapoints_index) & np.isfinite(series_to_plot)
+    polyfit_line = np.polyfit(datapoints_index[idx], series_to_plot[idx], 1)
+    p = np.poly1d(polyfit_line)
+
+    plt.plot(datapoints_index, p(datapoints_index), 'r--')
+    return plt.plot(datapoints_index, series_to_plot)
+
+
+def calculate_rolling_sd(df: pd.DataFrame,
+                         factor: str,
+                         window: int = 600):
+    datapoints = pd.Series(df[factor])
+    return datapoints.rolling(window).std()
+
+
+def calculate_avg_rolling_sd(df_list: list,
+                             factor: str,
+                             window: int = 600):
+    master: pd.DataFrame = pd.DataFrame({i: calculate_rolling_sd(df, factor, window) for i, df in enumerate(df_list)})
+    master['mean'] = master.mean(axis=1)
+    return pd.Series(master['mean'])
+
 
 def get_recognition_indices(same_pref: tuple,
                             diff_pref: tuple) -> dict:
