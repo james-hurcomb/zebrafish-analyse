@@ -5,10 +5,6 @@ import matplotlib.path as pltpath
 from pymediainfo import MediaInfo
 
 
-class AcuityError(Exception):
-    pass
-
-
 class TrajectoryObject:
     """
     A class to store and provide basic tools for analysis of trajectories.
@@ -65,7 +61,7 @@ class TrajectoryObject:
         """Returns the X,Y coordinates of a fish at a requested frame
 
         Args:
-            fish_id (int): The ID of the fish
+            fish_num (int): The fish to inspect
             frame_num (int): The frame to inspect
 
         Returns:
@@ -101,27 +97,66 @@ class TrajectoryObject:
 
     def remove_polygon_from_frames(self,
                                    raw_vertices: list,
+                                   df: pd.DataFrame = None,
                                    inplace: bool = False,
                                    calc_speed_including_skipped_frames: bool = False) -> pd.DataFrame:
         """
         Removes all points falling inside a particular polygon from the positions_df array
         :param raw_vertices: List of vertices bounding the polygon of interest
+        :param df: Dataframe to perform removal on
+        :param inplace: Modify the object dataframe if true
         :param calc_speed_including_skipped_frames: Should speeds after skipped frames be NaN or calculated based on the
         time elapsed? Defaults to NaN
         :return:
         """
-        working_df = self.positions_df
+        if df is None:
+            df = self.positions_df.copy()
 
-        working_df.reset_index(inplace=True)
-        vertices: np.ndarray = np.array(raw_vertices)
-        path: pltpath.Path = pltpath.Path(vertices)
-        points_to_check: np.ndarray = working_df[['x_pos', 'y_pos']].to_numpy().astype(float)
-        point_bools = pd.Series(path.contains_points(points_to_check)).astype(bool)
-        working_df = working_df[-point_bools]
-        df_w_speeds = self.calculate_speeds(raw_df=working_df, include_skipped_frames=calc_speed_including_skipped_frames)
+        df.reset_index(inplace=True)
+        point_bools = self.get_point_bools(raw_vertices, df)
+        df = df[-point_bools]
+        df_w_speeds = self.calculate_speeds(raw_df=df, include_skipped_frames=calc_speed_including_skipped_frames)
         if inplace is True:
             self.positions_df = df_w_speeds
         return df_w_speeds
+
+    def trim_to_polygon(self,
+                        vertices: list,
+                        df: pd.DataFrame = None,
+                        inplace: bool = False):
+        """
+        Trims out a polygon and returns all points lying within it
+        :param vertices:
+        :param df:
+        :param inplace:
+        :return:
+        """
+
+        if df is None:
+            df = self.positions_df.copy()
+
+        df.reset_index(inplace=True)
+        point_bools = self.get_point_bools(vertices, df)
+        df = df[point_bools]
+
+        if inplace is True:
+            self.positions_df = df
+
+        return df
+
+    @staticmethod
+    def get_point_bools(raw_vertices: list,
+                        df: pd.DataFrame) -> np.ndarray:
+        """
+        Method to return boolean values if point within bounded area
+        :param raw_vertices: Vertices binding the polygon
+        :param df: Dataframe to inspect
+        :return: np.ndarray True/False
+        """
+        vertices: np.ndarray = np.array(raw_vertices)
+        path: pltpath.Path = pltpath.Path(vertices)
+        points_to_check: np.ndarray = df[['x_pos', 'y_pos']].to_numpy().astype(float)
+        return pd.Series(path.contains_points(points_to_check)).astype(bool)
 
     def calculate_speeds(self,
                          raw_df: pd.DataFrame = None,
@@ -141,9 +176,9 @@ class TrajectoryObject:
         df['fish_match'] = df['fish_id'].diff().eq(0)
         distances = df.diff().fillna(0)
         df['distance'] = np.where(df['fish_match'] == True,
-                                    np.sqrt(distances.x_pos ** 2 + distances.y_pos ** 2), np.NaN)
-        # We can now calculate speeds. If include_skipped_frames is true, we'll just take an average over the timpoints
-        # where the fish is missing. Obviously, this can distort the numbers quite a lot if the fish is misisng for
+                                  np.sqrt(distances.x_pos ** 2 + distances.y_pos ** 2), np.NaN)
+        # We can now calculate speeds. If include_skipped_frames is true, we'll just take an average over the timepoints
+        # where the fish is missing. Obviously, this can distort the numbers quite a lot if the fish is missing for
         # a long time, so I don't do this by default
         if include_skipped_frames is True:
             df['speed'] = df.distance / (df['frame_id'].diff() * (1 / self.frame_rate))
@@ -180,7 +215,8 @@ class TrajectoryObject:
                 output_df = output_df[output_df[factor] > mean - sd * sds]
 
             if recalculate is True:
-                output_df = self.calculate_speeds(df=output_df, include_skipped_frames=include_skip_frames_on_recalc)
+                output_df = self.calculate_speeds(raw_df=output_df,
+                                                  include_skipped_frames=include_skip_frames_on_recalc)
 
             if inplace is True:
                 self.positions_df = output_df
@@ -210,8 +246,10 @@ class NovelObjectRecognitionTest(TrajectoryObject):
         self.object_a: tuple = object_locations[0]
         self.object_b: tuple = object_locations[1]
 
-        self.positions_df['dist_obj_a'] = np.sqrt((self.object_a[0] - self.positions_df['x_pos']) ** 2 + (self.object_a[1] - self.positions_df['y_pos']) ** 2)
-        self.positions_df['dist_obj_b'] = np.sqrt((self.object_b[0] - self.positions_df['x_pos']) ** 2 + (self.object_b[1] - self.positions_df['y_pos']) ** 2)
+        self.positions_df['dist_obj_a'] = np.sqrt((self.object_a[0] - self.positions_df['x_pos']) ** 2 +
+                                                  (self.object_a[1] - self.positions_df['y_pos']) ** 2)
+        self.positions_df['dist_obj_b'] = np.sqrt((self.object_b[0] - self.positions_df['x_pos']) ** 2 +
+                                                  (self.object_b[1] - self.positions_df['y_pos']) ** 2)
 
     def determine_object_preference_by_frame(self,
                                              exploration_area_radius: float) -> tuple:
@@ -225,19 +263,38 @@ class NovelObjectRecognitionTest(TrajectoryObject):
         """
 
         if self.distance_between_points(self.object_a, self.object_b) <= exploration_area_radius:
-            raise AcuityError(
+            raise ValueError(
                 f"Exploration area supplied ({exploration_area_radius}) is greater than distance between novel objects "
                 f"(({self.distance_between_points(self.object_a, self.object_b)}).")
 
-        # if fish_range is None:
-        #     fish_range = (0, self.num_fish)
-
-        pref_a, pref_b, no_pref = 0, 0, 0
         # FILTER BY dist_obj_a and DIST_obj_b!
         pref_a = len(self.positions_df[self.positions_df['dist_obj_a'] < exploration_area_radius])
         pref_b = len(self.positions_df[self.positions_df['dist_obj_b'] < exploration_area_radius])
         no_pref = len(self.positions_df) - (pref_a + pref_b)
         return pref_a, pref_b, no_pref
+
+    def trim_based_on_objs(self,
+                           obj: str,
+                           exploration_area_radius: int,
+                           df: pd.DataFrame = None,
+                           inplace: bool = False) -> pd.DataFrame:
+        """
+        Trims dataframe down to only frames where fish near objects
+        :param obj: Object to inspect
+        :param exploration_area_radius: Radius considered near
+        :param df: Dataframe to inspect
+        :param inplace: Destructively change self.positions_df?
+        :return:
+        """
+        if df is None:
+            df = self.positions_df.copy()
+
+        df = df[df[f'dist_{obj}'] < exploration_area_radius]
+
+        if inplace is True:
+            self.positions_df = df
+
+        return df
 
 
 def get_video_dimensions(path: str) -> tuple:
