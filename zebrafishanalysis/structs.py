@@ -112,7 +112,7 @@ class TrajectoryObject:
         if df is None:
             df = self.positions_df.copy()
 
-        df.reset_index(inplace=True)
+        df.reset_index(drop=True, inplace=True)
         point_bools = self.get_point_bools(raw_vertices, df)
         df = df[-point_bools]
         df_w_speeds = self.calculate_speeds(raw_df=df, include_skipped_frames=calc_speed_including_skipped_frames)
@@ -135,7 +135,7 @@ class TrajectoryObject:
         if df is None:
             df = self.positions_df.copy()
 
-        df.reset_index(inplace=True)
+        df.reset_index(drop=True, inplace=True)
         point_bools = self.get_point_bools(vertices, df)
         df = df[point_bools]
 

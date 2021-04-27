@@ -3,7 +3,8 @@ library(tidyverse)
 library(grid)
 library(gtable)    
 library(gridExtra)
-
+library(reshape)
+require(png)
 # This is PURELY to make pretty charts. No real analysis is happening here, and most of the charts can be easily
 # reproduced in zebrafishanalysis
 
@@ -12,18 +13,55 @@ library(gridExtra)
 
 safe_colorblind_palette <- c("#88CCEE", "#CC6677", "#DDCC77", "#117733", "#332288", "#AA4499", 
                              "#44AA99", "#999933", "#882255", "#661100", "#6699CC", "#888888")
-
+# Little visualisation so I can see what colour is which when I decide what to colour my charts
 scales::show_col(safe_colorblind_palette)
 
+# LOAD AND MEDDLE WITH DATA
 
 full_data_m_1 <- read.csv("all_fish_by_fish.csv")
 full_data_m_2 <- read.csv("two_month_fish_measures.csv")
+
+full_data_m_1 %>% 
+  summarise_at(c("d1", "d2", "d3"), sd)
+
+full_data_m_2 %>% 
+  summarise_at(c("d1", "d2", "d3"), sd)
+
 
 full_data_m_1$age <- "1 month"
 full_data_m_2$age <- "2 month"
 
 
 full_data <- rbind(full_data_m_1, full_data_m_2)
+
+file_list <- list.files(pattern="export_\\d+.csv")
+
+period_data <- as_tibble(do.call(rbind, lapply(
+  file_list, function(x) cbind(read.csv(x), 
+                               period=strtoi(str_extract(x, "[0-9]+"))))))
+
+file_list2 <- list.files(pattern="export_2month_\\d+.csv")
+
+period_data2 <- as_tibble(
+  do.call(rbind, lapply(
+    file_list2, function(x) cbind(read.csv(x), 
+                                  period=strtoi(str_extract(x, "(?<=month_)[0-9]+"))))))
+
+file_list_e <- list.files(pattern="export_edges_\\d+.csv")
+
+edges_by_period <- as_tibble(do.call(rbind, lapply(
+  file_list_e, function(x) cbind(read.csv(x), 
+                               period=strtoi(str_extract(x, "[0-9]+"))))))
+
+file_list_e2 <- list.files(pattern="export_edges_twomonth_\\d+.csv")
+
+edges_by_period2 <- as_tibble(do.call(rbind, lapply(
+  file_list_e2, function(x) cbind(read.csv(x), 
+                                 period=strtoi(str_extract(x, "[0-9]+"))))))
+
+edge_img <- readPNG("central.png")
+
+# DISCRIMINATION INDEX FIGURE
 
 d1 <- full_data %>% 
   arrange(age) %>% 
@@ -75,8 +113,6 @@ d3 <- full_data %>%
   annotation_custom(grobTree(textGrob("C", x=0.02,  y=0.95, hjust=0.0, gp=gpar(col="black", fontsize=10))))
 
 
-
-
 d2_by_indv <- full_data %>% 
   arrange(age) %>% 
   ggplot(aes(x = reorder(X, d2), y = d2, fill = as.factor(age))) +
@@ -104,45 +140,109 @@ d2_by_indv <- full_data %>%
 
 grid.arrange(d1, d2, d3, d2_by_indv, layout_matrix = rbind(c(1, 2, 3), c(1, 2, 3), c(4, 4, 4), c(4, 4, 4), c(4, 4, 4)))
 
-ggplot(data = full) +
-  geom_col(mapping = aes(x = reorder(X, d2), y = d2))
 
+# EXPLORATION TIME FIGURE
 
-ggplot(data = d2) +
-  geom_boxplot(aes(y = month_2))
-
-
-file_list <- list.files(pattern="export_\\d+.csv")
-
-period_data <- as_tibble(do.call(rbind, lapply(file_list, function(x) cbind(read.csv(x), period=strtoi(str_extract(x, "[0-9]+"))))))
-period_data %>% 
-  arrange(period) %>% 
-    ggplot() +
-      geom_boxplot(mapping = aes(x = as.factor(period), y = d2)) +
-      labs(title="Exploration Index by 5 minute interval",
-           x = "Slice start time (s)",
-           y = "Discrimination index (d2)")
-
-period_data %>% 
-  arrange(period) %>% 
+bxp_xpr <- full_data %>% 
+  melt(id=c("X", "age")) %>% 
+  filter(variable == "e1" | variable == "e2") %>% 
   ggplot() +
-  geom_line(mapping = aes(x = period, y = d2, color = X)) +
-  labs(title="Relative index of exploration by 5 minute interval")
+  geom_boxplot(aes(x = as.factor(age), y = value, fill = variable)) +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.title = element_blank(),
+        legend.position = "bottom") +
+  labs(y = "Frames spent exploring",
+       x = "Age",
+       fill = "Test",
+       title = "Exploration by age") +
+  scale_fill_manual(labels = c("Training Phase", "Testing Phase"), values = c(safe_colorblind_palette[2], safe_colorblind_palette[4])) +
+  annotation_custom(grobTree(textGrob("A", x=0.02,  y=0.95, hjust=0.0, gp=gpar(col="black", fontsize=10))))
 
-file_list2 <- list.files(pattern="export_2month_\\d+.csv")
 
-period_data2 <- as_tibble(
-  do.call(rbind, lapply(
-    file_list2, function(x) cbind(read.csv(x), 
-                                  period=strtoi(str_extract(x, "(?<=month_)[0-9]+"))))))
-period_data2 %>% 
-  arrange(period) %>% 
-  ggplot() +
-  geom_boxplot(mapping = aes(x = as.factor(period), y = d2)) +
-  labs(title="Exploration Index by 5 minute interval",
-       x = "Slice start time (s)",
-       y = "Discrimination index (d2)")
+lgr_xpr_one <- period_data[!rowSums(period_data['period'] == 144000),] %>% 
+  group_by(period) %>% 
+  as.data.frame() %>% 
+  melt(id=c("X", "period")) %>% 
+  filter(variable == "e1" | variable == "e2") %>% 
+  ggplot(aes(x = as.factor(period), y = value, group = variable, color = variable, fill = variable)) +
+  geom_smooth() +  
+  guides(fill= FALSE, color=guide_legend(override.aes=list(fill=NA))) +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.title = element_blank(),
+        legend.position = "bottom") +
+  labs(y = "Frames spent exploring",
+       x = "Timeslice",
+       fill = "Test",
+       title = "Exploration: One Month") +
+  scale_color_manual(labels = c("Training Phase", "Testing Phase"), values = c(safe_colorblind_palette[2], safe_colorblind_palette[4])) +
+  scale_fill_manual(labels = c("Training Phase", "Testing Phase"), values = c(safe_colorblind_palette[2], safe_colorblind_palette[4])) +
+  annotation_custom(grobTree(textGrob("B", x=0.02,  y=0.95, hjust=0.0, gp=gpar(col="black", fontsize=10))))
 
+
+lgr_xpr_two <- period_data2[!rowSums(period_data2['period'] >= 144000),] %>% 
+  group_by(period) %>% 
+  as.data.frame() %>% 
+  melt(id=c("X", "period")) %>% 
+  filter(variable == "e1" | variable == "e2") %>% 
+  ggplot(aes(x = as.factor(period), y = value, group = variable, fill = variable, color = variable)) +
+  geom_smooth() +  
+  guides(fill= FALSE, color=guide_legend(override.aes=list(fill=NA))) +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.title = element_blank(),
+        legend.position = "bottom") +
+  labs(y = "Frames spent exploring",
+       x = "Timeslice",
+       fill = "Test",
+       color = "None",
+       title = "Exploration: Two Month") +
+  scale_color_manual(labels = c("Training Phase", "Testing Phase"), values = c(safe_colorblind_palette[2], safe_colorblind_palette[4])) +
+  scale_fill_manual(labels = c("Training Phase", "Testing Phase"), values = c(safe_colorblind_palette[2], safe_colorblind_palette[4])) +
+  annotation_custom(grobTree(textGrob("C", x=0.02,  y=0.95, hjust=0.0, gp=gpar(col="black", fontsize=10))))
+
+
+grid.arrange(bxp_xpr, lgr_xpr_one, lgr_xpr_two, layout_matrix = cbind(c(1, 1, 1, 1), c(2, 2, 3, 3)))
+
+# EDGE OF SCREEN ANALYSIS
+
+edges_by_period$percentage = (edges_by_period$Frames.at.edge / edges_by_period$Total.Frames) * 100
+
+onemonthe <- edges_by_period %>% 
+  ggplot(aes(x = period, y = percentage, fill = Trial, color = Trial)) +
+  geom_smooth() +
+  guides(fill= FALSE, color=guide_legend(override.aes=list(fill=NA))) +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.title = element_blank(),
+        legend.position = "bottom") +
+  labs(y = "Frames spent at edge (%)",
+       x = "Time (frames)",
+       fill = "Test",
+       color = "None",
+       title = "Frames at edge: 1 month") +
+  ylim(0, 100) +
+  scale_color_manual(labels = c("Testing Phase", "Training Phase"), values = c(safe_colorblind_palette[4], safe_colorblind_palette[2])) +
+  scale_fill_manual(labels = c("Testing Phase", "Training Phase" ), values = c(safe_colorblind_palette[4], safe_colorblind_palette[2])) +
+  annotation_custom(grobTree(textGrob("A", x=0.02,  y=0.95, hjust=0.0, gp=gpar(col="black", fontsize=10))))
+
+edges_by_period2$percentage = (edges_by_period2$Frames.at.edge / edges_by_period2$Total.Frames) * 100
+
+twomonthe <- edges_by_period2 %>% 
+  ggplot(aes(x = period, y = percentage, fill = Trial, color = Trial)) +
+  geom_smooth() +
+  guides(fill= FALSE, color=guide_legend(override.aes=list(fill=NA))) +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.title = element_blank(),
+        legend.position = "bottom") +
+  labs(y = "Frames spent at edge (%)",
+       x = "Time (frames)",
+       fill = "Test",
+       color = "None",
+       title = "Frames at edge: 2 month") +
+  ylim(0, 100) +
+  scale_color_manual(labels = c("Testing Phase", "Training Phase"), values = c(safe_colorblind_palette[4], safe_colorblind_palette[2])) +
+  scale_fill_manual(labels = c("Testing Phase", "Training Phase" ), values = c(safe_colorblind_palette[4], safe_colorblind_palette[2])) +
+  annotation_custom(grobTree(textGrob("B", x=0.02,  y=0.95, hjust=0.0, gp=gpar(col="black", fontsize=10))))
+
+grid.arrange(onemonthe, twomonthe, rasterGrob(edge_img), layout_matrix = rbind(c(1, 2), c(3, 3)))
 
 # Full accelerations
 
@@ -153,15 +253,19 @@ colours_full_accs <- c("Training" = safe_colorblind_palette[1],
                        "Testing" = safe_colorblind_palette[3])
 
 ggplot() +
-  geom_line(aes(X, mean, color="Training"), data=same_obj_acc, alpha=0.6) +
-  geom_smooth(aes(X, mean, color = "Training"), method = "lm", data = same_obj_acc) +
-  geom_line(aes(X, mean, color="Testing"), data=diff_obj_acc, alpha=0.6) +
-  geom_smooth(aes(X, mean, color="Testing"), method = "lm", data = diff_obj_acc) +
+  geom_line(aes(X, mean, color="Training"), data=same_obj_acc, alpha=0.3) +
+  geom_smooth(aes(X, mean, color = "Training"), data = same_obj_acc) +
+  geom_line(aes(X, mean, color="Testing"), data=diff_obj_acc, alpha=0.3) +
+  geom_smooth(aes(X, mean, color="Testing"), data = diff_obj_acc) +
   labs(x = "Frame ID",
        y = "Mean standard deviation",
        color = "Legend") +
   scale_color_manual(values = colours_full_accs)
-  
+
+
+
+
+
 # Accelerations comparisons
 
 same_obj_a <- read.csv("same_obj_a_acc.csv", header = FALSE, colClasses = c("V1"="double"))
@@ -186,6 +290,8 @@ ggplot() +
        y = "Count",
        color = "Legend") +
   scale_color_manual(values = colours_accs)
+
+# ADD FRAME IDS TOO AND PLOT GEOM SMOOTH
 
 ggplot() +
   geom_density(aes(V1, color = "Training: Left Object", fill = "Training: Left Object")

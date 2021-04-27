@@ -45,8 +45,6 @@ if __name__ == "__main__":
     full_measures: pd.DataFrame = df_for_exp.transpose()
     full_measures.to_csv(os.getcwd() + "/two_month_fish_measures.csv")
 
-    print(za.get_ri_significance([m['d1'] for m in measures.values()], index_name = 'd1p '))
-
     num_frames_same = {fish: tr.num_frames for fish, tr in same_fish.items()}
     num_frames_diff = {fish: tr.num_frames for fish, tr in diff_fish.items()}
 
@@ -70,28 +68,61 @@ if __name__ == "__main__":
             last_i = i
 
     # Okay, now we have two dictionaries with arrangement dict[fish][time_period]
-    sliced_measures = {}
-    for fish_name, periods in same_time_slices.items():
-        for period_name, tr_same in periods.items():
-            if period_name not in sliced_measures:
-                sliced_measures[period_name] = {}
-            # Try to get the correspnding timepoint for the same fish
+    # sliced_measures = {}
+    # for fish_name, periods in same_time_slices.items():
+    #     for period_name, tr_same in periods.items():
+    #         if period_name not in sliced_measures:
+    #             sliced_measures[period_name] = {}
+    #         # Try to get the correspnding timepoint for the same fish
+    #         try:
+    #             tr_diff: za.NovelObjectRecognitionTest = diff_time_slices[fish_name][period_name]
+    #         except KeyError:
+    #             # If the recordings are different lengths, just continue
+    #             continue
+    #         # Now we remove erroneous data. This is a really bad way of doing it, but whatever. todo: .get instead
+    #         try:
+    #             rem_rg(tr_same, regions_to_remove_same[fish_name])
+    #             rem_rg(tr_diff, regions_to_remove_diff[fish_name])
+    #         except KeyError:
+    #             pass
+    #         ms = measures_helper(tr_same, tr_diff)
+    #         sliced_measures[period_name][fish_name] = measures_helper(tr_same, tr_diff)
+
+    # Now we have sliced measures, we'll put them into a csv so I can do proper statistics in R
+
+    # for n, time_period in sliced_measures.items():
+    #     df_for_exp = pd.DataFrame(time_period).transpose()
+    #     df_for_exp.to_csv(os.getcwd() + f"/export_2month_{n}.csv")
+
+    edge_analysis_same = {}
+    edge_analysis_diff = {}
+    for fish_name, periods_of_fish in same_time_slices.items():
+        for period_name, tr_same in periods_of_fish.items():
+            if period_name not in edge_analysis_same:
+                edge_analysis_same[period_name] = {}
+            if period_name not in edge_analysis_diff:
+                edge_analysis_diff[period_name] = {}
             try:
-                tr_diff: za.NovelObjectRecognitionTest = diff_time_slices[fish_name][period_name]
+                tr_diff = diff_time_slices[fish_name][period_name]
             except KeyError:
-                # If the recordings are different lengths, just continue
                 continue
-            # Now we remove erroneous data. This is a really bad way of doing it, but whatever. todo: .get instead
             try:
                 rem_rg(tr_same, regions_to_remove_same[fish_name])
                 rem_rg(tr_diff, regions_to_remove_diff[fish_name])
             except KeyError:
                 pass
-            ms = measures_helper(tr_same, tr_diff)
-            sliced_measures[period_name][fish_name] = measures_helper(tr_same, tr_diff)
 
-    # Now we have sliced measures, we'll put them into a csv so I can do proper statistics in R
+            edge_analysis_same[period_name][fish_name] = {"Trial": "Same",
+                   "Total Frames": len(tr_same.positions_df),
+                   "Frames at edge": len(tr_same.positions_df) - len(tr_same.trim_to_polygon(central_regions_same_2_m[fish_name]))}
 
-    for n, time_period in sliced_measures.items():
-        df_for_exp = pd.DataFrame(time_period).transpose()
-        df_for_exp.to_csv(os.getcwd() + f"/export_2month_{n}.csv")
+            edge_analysis_diff[period_name][fish_name] = {"Trial": "Diff",
+                   "Total Frames": len(tr_diff.positions_df),
+                   "Frames at edge": len(tr_diff.positions_df) - len(tr_diff.trim_to_polygon(central_regions_diff_2_m[fish_name]))}
+
+
+    for n, time_period in edge_analysis_same.items():
+         df_for_exp = pd.DataFrame(time_period).transpose()
+         df_to_add = pd.DataFrame(edge_analysis_diff[n]).transpose()
+         df_for_exp = df_for_exp.append(df_to_add)
+         df_for_exp.to_csv(os.getcwd() + f"/export_edges_twomonth_{n}.csv")
