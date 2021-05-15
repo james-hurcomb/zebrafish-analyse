@@ -5,7 +5,6 @@ from scipy import stats
 from typing import Callable
 from zebrafishanalysis.structs import TrajectoryObject, NovelObjectRecognitionTest
 
-
 def draw_figure(func: Callable) -> Callable:
     """
     Decorator to help draw figures. Clears canvas, plots figure
@@ -30,11 +29,12 @@ def draw_heatmap(trajectories: np.ndarray or TrajectoryObject,
     :return: Plot
     """
     if isinstance(trajectories, TrajectoryObject) or isinstance(trajectories, NovelObjectRecognitionTest):
+        dimensions = trajectories.video_dimensions
         trajectories = trajectories.flatten_fish_positions()
 
     x, y = trajectories[:, 0], trajectories[:, 1]
 
-    heatmap, x_edges, y_edges = np.histogram2d(x, y, bins=(bins, bins))
+    heatmap, x_edges, y_edges = np.histogram2d(x, y, bins=(bins, bins), range=[[100, 1200], [0, dimensions[1]]])
     extent = [x_edges[0], x_edges[-1], y_edges[0], y_edges[-1]]
     return plt.imshow(heatmap.T, extent=extent, origin='lower')
 
@@ -42,7 +42,8 @@ def draw_heatmap(trajectories: np.ndarray or TrajectoryObject,
 @draw_figure
 def draw_histogram(trajectories: TrajectoryObject or pd.DataFrame,
                    factor: str,
-                   bins: int = 10):
+                   bins: int = 10,
+                   dimensions: tuple = None):
     """
     Draws a histogram
     :param trajectories: A TrajectoryObject or Filtered DataFrame
@@ -83,19 +84,30 @@ def calculate_rolling_sd(df: pd.DataFrame,
 def calculate_avg_rolling_sd(df_list: list,
                              factor: str,
                              window: int = 600):
+    # for df in df_list:
+    #     df.set_index(df['frame_id'], inplace=True)
+    #     df = df[[factor, 'frame_id']]
+    #
+    # df = pd.concat([df[[factor]] for df in df_list], axis=1)
+    #
+    # return df.std(axis=1)
+
     master: pd.DataFrame = pd.DataFrame({i: calculate_rolling_sd(df, factor, window) for i, df in enumerate(df_list)})
-    master['mean'] = master.mean(axis=1)
-    return pd.Series(master['mean'])
+    # master['mean'] = master.mean(axis=1)
+    return master
 
 
-def get_recognition_indices(same_pref: tuple,
-                            diff_pref: tuple) -> dict:
+def get_recognition_indices(same_tr: NovelObjectRecognitionTest,
+                            diff_tr: NovelObjectRecognitionTest,
+                            exploration_area_radius: int) -> dict:
     """
     Gets measures of recognition from the novel object test
     :param same_pref: Preferences during training phase
     :param diff_pref: Preferences during testing phase, assuming [1] is the novel object
     :return: dict of different measures
     """
+    same_pref = same_tr.determine_object_preference_by_frame(exploration_area_radius)
+    diff_pref = diff_tr.determine_object_preference_by_frame(exploration_area_radius)
 
     e1 = same_pref[0] + same_pref[1]
     e2 = diff_pref[0] + diff_pref[1]
@@ -123,7 +135,9 @@ def get_recognition_indices(same_pref: tuple,
             "d3": d3,
             "d1_familiar": d1_familiar,
             "d2_familiar": d2_familiar,
-            "d3_familiar": d3_familiar}
+            "d3_familiar": d3_familiar,
+            "num_frames_same": len(same_tr.positions_df),
+            "num_frames_diff": len(diff_tr.positions_df)}
 
 
 def get_ri_significance(index: list,

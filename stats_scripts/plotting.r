@@ -727,3 +727,15 @@ ggplot() +
     geom_density(aes(V1, color = "Testing: Novel Object", fill = "Testing: Novel Object")
                  , data=diff_obj_b, alpha = 0.4, lwd = 0.8, adjust = 0.5)
   
+# FREEZING
+
+frz_s_1 <- read.csv("freeze_same_1m.csv", header = FALSE)
+frz_d_1 <- read.csv("freeze_diff_1m.csv", header = FALSE)
+
+ggplot() +
+  geom_freqpoly(aes(x = V1), data = frz_s_1, bins = 15, color = "blue") +
+  geom_freqpoly
+
+
+ggplot() +
+  geom_line(aes(x = V1, y = cumsum(V1)), data = frz_s_1)

@@ -13,7 +13,8 @@ class TrajectoryObject:
     def __init__(self, raw_loaded_trajectories: tt.trajectories,
                  video_path: str = None,
                  invert_y: bool = True,
-                 period: slice = None):
+                 period: slice = None,
+                 left_wall_coords: tuple = None):
 
         # Set some generic params for easy inspection at a later date. Mostly just pull from tt properties
         self.num_fish: int = len(raw_loaded_trajectories.identity_labels)
@@ -21,6 +22,8 @@ class TrajectoryObject:
         self.frame_rate: int = raw_loaded_trajectories.params['frame_rate']
         self.recording_length: float = raw_loaded_trajectories.number_of_frames / raw_loaded_trajectories.params[
             'frame_rate']
+
+        self.pixel_dist_cm: float =  11 / self.distance_between_points(left_wall_coords[0], left_wall_coords[1])
 
         # If a video path is supplied, we set the path as a property and extract the dimensions. A video path isn't
         # necessary though, it's really only helpful for the GUI helpers
@@ -45,7 +48,8 @@ class TrajectoryObject:
         # to store data in a table with cols X, Y, fish_id, frame_id. This is also good from a tidy-data pov.
 
         list_of_dicts: list = []
-        # There's probably a better way of doing this, but this way turned out to be quite quick anyway
+        # There's probably a better way of doing this, but this way turned out to take <1second anyway, which seems
+        # odd to me. Might require changing if we have a really big dataset
         for frame_id, frame in enumerate(self.positions):
             for fish_id, fish in enumerate(frame):
                 list_of_dicts.append({'frame_id': frame_id,
@@ -113,12 +117,14 @@ class TrajectoryObject:
             df = self.positions_df.copy()
 
         df.reset_index(drop=True, inplace=True)
-        point_bools = self.get_point_bools(raw_vertices, df)
-        df = df[-point_bools]
-        df_w_speeds = self.calculate_speeds(raw_df=df, include_skipped_frames=calc_speed_including_skipped_frames)
+        point_bools: pd.Series = self.get_point_bools(raw_vertices, df)
+        # Set both positions to not a number
+        df['x_pos'].loc[-point_bools] = np.NaN
+        df['y_pos'].loc[-point_bools] = np.NaN
+        df_w_speeds = self.calculate_speeds(df)
         if inplace is True:
-            self.positions_df = df_w_speeds
-        return df_w_speeds
+            self.positions_df = df
+        return df
 
     def trim_to_polygon(self,
                         vertices: list,
@@ -146,7 +152,7 @@ class TrajectoryObject:
 
     @staticmethod
     def get_point_bools(raw_vertices: list,
-                        df: pd.DataFrame) -> np.ndarray:
+                        df: pd.DataFrame) -> pd.Series:
         """
         Method to return boolean values if point within bounded area
         :param raw_vertices: Vertices binding the polygon
@@ -161,7 +167,7 @@ class TrajectoryObject:
     def calculate_speeds(self,
                          raw_df: pd.DataFrame = None,
                          inplace: bool = False,
-                         include_skipped_frames: bool = False) -> pd.DataFrame:
+                         erraticness_frames: int = 60) -> pd.DataFrame:
         """
         Method invoked when a dataframe update occurs, e.g. when we remove rows from it
         :return: None
@@ -172,26 +178,42 @@ class TrajectoryObject:
             # This is required to suppress some weird errors that occur because of
             df = raw_df.copy()
 
+        # Sort values by fish ID, then frame ID so we have an entire fish in order
         df.sort_values(['fish_id', 'frame_id'], inplace=True)
+        # Create True/False col that say if previous frame is previous fish or not
         df['fish_match'] = df['fish_id'].diff().eq(0)
+        # Compute each frame's difference
         distances = df.diff().fillna(0)
+        # If fish match is true, distance is the hypotonuse, otherwise it's invalid
         df['distance'] = np.where(df['fish_match'] == True,
                                   np.sqrt(distances.x_pos ** 2 + distances.y_pos ** 2), np.NaN)
-        # We can now calculate speeds. If include_skipped_frames is true, we'll just take an average over the timepoints
-        # where the fish is missing. Obviously, this can distort the numbers quite a lot if the fish is missing for
-        # a long time, so I don't do this by default
-        if include_skipped_frames is True:
-            df['speed'] = df.distance / (df['frame_id'].diff() * (1 / self.frame_rate))
-            df['acceleration'] = df['speed'].diff() / (df['frame_id'].diff() * (1 / self.frame_rate))
-        else:
-            df['frame_match'] = df['frame_id'].diff().eq(1)
-            df['speed'] = np.where(df['frame_match'] == True,
-                                   df.distance / (df['frame_id'].diff() * (1 / self.frame_rate)), np.NaN)
-            df['acceleration'] = np.where(df['frame_match'] == True,
-                                          df['speed'].diff() / (df['frame_id'].diff() * (1 / self.frame_rate)), np.NaN)
+
+        # Speed is distance / difference in frame multiplyed by 1/the frame rate
+        df['speed'] = df.distance / (df['frame_id'].diff() * (1 / self.frame_rate))
+        df['speed_cm'] = (df.distance * self.pixel_dist_cm) / (df['frame_id'].diff() * (1 / self.frame_rate))
+        # Acceleration is speed divided by time
+        df['acceleration'] = df['speed'].diff() / (df['frame_id'].diff() * (1 / self.frame_rate))
+        df['acceleration_cm'] = df['speed_cm'].diff() / (df['frame_id'].diff() * (1 / self.frame_rate))
+
+        # Eraticness is calculated using
+        df['erraticness'] = df['distance'].rolling(erraticness_frames).sum() / np.sqrt(
+            df.x_pos.diff(periods=erraticness_frames) ** 2 + distances.y_pos.diff(periods=erraticness_frames) ** 2)
+
+        # Calculate the raw bearing in radians
+        df['raw_bearing'] = np.arctan2((df.y_pos - df['y_pos'].shift(1)),
+                                       (df.x_pos - df['x_pos'].shift(1)))
+        # Convert raw bearing to degrees
+        df['deg_bearing'] = df['raw_bearing'] * (180 / np.pi)
+        df['deg_bearing'] = df['deg_bearing'].mask(df['deg_bearing'] < 0, df['deg_bearing'] + 360)
+
+        # Use raw bearing to calculate difference
+        df['angle_diff_deg'] = np.degrees(np.abs(df['raw_bearing'].shift(-1) - df['raw_bearing']) % (np.pi * 2))
+        df['angle_diff_deg'] = df['angle_diff_deg'].mask(df['angle_diff_deg'] > 180, np.abs(df['angle_diff_deg'] - 360))
+
         if inplace is True:
             self.positions_df = df
         return df
+
 
     def drop_errors(self,
                     factor: str,
@@ -215,8 +237,7 @@ class TrajectoryObject:
                 output_df = output_df[output_df[factor] > mean - sd * sds]
 
             if recalculate is True:
-                output_df = self.calculate_speeds(raw_df=output_df,
-                                                  include_skipped_frames=include_skip_frames_on_recalc)
+                output_df = self.calculate_speeds(raw_df=output_df)
 
             if inplace is True:
                 self.positions_df = output_df
@@ -226,15 +247,26 @@ class TrajectoryObject:
 
         return output_df
 
+    def determine_freezing(self, period: int = 120, df: pd.DataFrame = None, inplace: bool = False):
+        if df is None:
+            df = self.positions_df.copy()
+
+        df['freezing'] = df['distance'].rolling(period).sum().le(10)
+
+        if inplace is True:
+            self.positions_df = df
+
+        return df
 
 class NovelObjectRecognitionTest(TrajectoryObject):
 
     def __init__(self,
                  raw_loaded_trajectories: tt.trajectories,
                  object_locations: tuple,
+                 left_wall_coords: tuple,
                  video_path: str = None,
                  invert_y: bool = True,
-                 period: slice = None
+                 period: slice = None,
                  ):
 
         # TODO: to be reworked to avoid duplication
@@ -242,7 +274,8 @@ class NovelObjectRecognitionTest(TrajectoryObject):
                                   raw_loaded_trajectories=raw_loaded_trajectories,
                                   video_path=video_path,
                                   invert_y=invert_y,
-                                  period=period)
+                                  period=period,
+                                  left_wall_coords=left_wall_coords)
         self.object_a: tuple = object_locations[0]
         self.object_b: tuple = object_locations[1]
 
