@@ -5,23 +5,23 @@ import os
 import numpy as np
 
 def export_speeds(same_fish, diff_fish, month):
-    speeds_same = [fish.drop_errors(factor='speed', cutoff=2500)[['speed', 'frame_id']].to_numpy()
+    speeds_same = [fish.drop_errors(factor='speed', cutoff=2500)[['speed_cm', 'frame_id']].to_numpy()
                   for fish in same_fish.values()]
-    speeds_diff = [fish.drop_errors(factor='speed', cutoff=2500)[['speed', 'frame_id']].to_numpy()
+    speeds_diff = [fish.drop_errors(factor='speed', cutoff=2500)[['speed_cm', 'frame_id']].to_numpy()
                   for fish in diff_fish.values()]
 
     np.savetxt(f"speeds_same_{month}m.csv", np.vstack(speeds_same), delimiter=',')
     np.savetxt(f"speeds_diff_{month}m.csv", np.vstack(speeds_diff), delimiter=',')
 
 def speeds_restricted(same_fish, diff_fish, month):
-    speeds_same_obj_a = [fish.trim_based_on_objs('obj_a', 200, df = fish.drop_errors(factor='speed', cutoff=2500))[['speed', 'frame_id']].to_numpy()
+    speeds_same_obj_a = [fish.trim_based_on_objs('obj_a', 200, df = fish.drop_errors(factor='speed', cutoff=2500))[['speed_cm', 'frame_id']].to_numpy()
                   for fish in same_fish.values()]
-    speeds_same_obj_b = [fish.trim_based_on_objs('obj_b', 200, df = fish.drop_errors(factor='speed', cutoff=2500))[['speed', 'frame_id']].to_numpy()
+    speeds_same_obj_b = [fish.trim_based_on_objs('obj_b', 200, df = fish.drop_errors(factor='speed', cutoff=2500))[['speed_cm', 'frame_id']].to_numpy()
                   for fish in same_fish.values()]
 
-    speeds_diff_obj_a = [fish.trim_based_on_objs('obj_a', 200, df = fish.drop_errors(factor='speed', cutoff=2500))[['speed', 'frame_id']].to_numpy()
+    speeds_diff_obj_a = [fish.trim_based_on_objs('obj_a', 200, df = fish.drop_errors(factor='speed', cutoff=2500))[['speed_cm', 'frame_id']].to_numpy()
                   for fish in diff_fish.values()]
-    speeds_diff_obj_b = [fish.trim_based_on_objs('obj_b', 200, df = fish.drop_errors(factor='speed', cutoff=2500))[['speed', 'frame_id']].to_numpy()
+    speeds_diff_obj_b = [fish.trim_based_on_objs('obj_b', 200, df = fish.drop_errors(factor='speed', cutoff=2500))[['speed_cm', 'frame_id']].to_numpy()
                   for fish in diff_fish.values()]
 
     np.savetxt(f"speeds_same_obj_a_{month}m.csv", np.vstack(speeds_same_obj_a), delimiter=',')

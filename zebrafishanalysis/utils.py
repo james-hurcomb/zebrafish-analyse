@@ -194,19 +194,11 @@ def crush_multiple_objects(objects: list,
             # todo error handling
             raise ValueError
         return np.vstack(positions)
-    elif factor == 'speeds' or factor == 'speed':
-        try:
-            speeds: list = [obj.positions_df[['speed']].to_numpy() for obj in objects]
-        except ValueError:
-            raise ValueError
-        return np.vstack(speeds)
-    elif factor == 'accelerations' or factor == 'acceleration':
-        try:
-            speeds: list = [obj.positions_df[['acceleration']].to_numpy() for obj in objects]
-        except ValueError:
-            raise ValueError
-        return np.vstack(speeds)
     else:
-        raise ValueError("This factor does not exist")
+        try:
+            stack: list = [obj.positions_df[[factor]].to_numpy() for obj in objects]
+        except ValueError:
+            raise ValueError("Factor not found")
+        return np.vstack(stack)
 
 

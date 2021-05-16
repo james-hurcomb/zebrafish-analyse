@@ -5,8 +5,8 @@ import os
 import numpy as np
 
 def export_erratic(same_fish, diff_fish, month):
-    same_sd = za.calculate_avg_rolling_sd([fish.drop_errors('acceleration', 10000) for fish in same_fish.values()], 'acceleration', window=3600)
-    diff_sd = za.calculate_avg_rolling_sd([fish.drop_errors('acceleration', 10000) for fish in diff_fish.values()], 'acceleration', window=3600)
+    same_sd = za.calculate_avg_rolling_sd([fish.drop_errors('acceleration', 10000) for fish in same_fish.values()], 'acceleration_cm', window=60)
+    diff_sd = za.calculate_avg_rolling_sd([fish.drop_errors('acceleration', 10000) for fish in diff_fish.values()], 'acceleration_cm', window=60)
 
     same_sd.to_csv(os.getcwd() + f"/acc_sds_same_{month}m.csv")
     diff_sd.to_csv(os.getcwd() + f"/acc_sds_diff_{month}m.csv")
